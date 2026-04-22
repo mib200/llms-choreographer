@@ -1,5 +1,5 @@
 {
-  "name": "chorus",
+  "name": "llms-choreographer",
   "owner": { "name": "valpere" },
   "metadata": {
     "description": "Claude Code plugins for AI coding agents: OpenCode, Gemini, Claude, Codex, Cursor, Kilo",
@@ -49,11 +49,11 @@
       "source": "./plugins/kilo"
     },
     {
-      "name": "chorus",
+      "name": "llms-choreographer",
       "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion.",
       "version": "1.0.0",
       "author": { "name": "valpere" },
-      "source": "./plugins/chorus"
+      "source": "./plugins/llms-choreographer"
     }
   ]
 }

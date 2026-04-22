@@ -47,6 +47,6 @@
 
 - Open `graphify-out/graph.html` in browser to explore knowledge graph interactively
 - `/graphify query "..."` to ask questions using the graph (21.4x cheaper than raw corpus)
-- Key open question from graph: **Why does `Graceful Degradation: skip missing agents require 2+` bridge Agent Registry → Chorus Philosophy → Codex Skills?**
+- Key open question from graph: **Why does `Graceful Degradation: skip missing agents require 2+` bridge Agent Registry → LLMs Choreographer Philosophy → Codex Skills?**
 - `graphify-out/GRAPH_REPORT.md` has full audit trail, god nodes, surprising connections
 - Run `npm test` to verify 37 tests still pass (companion + MCP server suites)

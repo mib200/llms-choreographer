@@ -1,14 +1,14 @@
 ---
-name: chorus-parallel-debug
-description: Parallel root-cause hypotheses from multiple agents for a reported bug. Use when the user says "parallel debug", "chorus debug", "multiple hypotheses", or "debug with all agents".
+name: llms-choreographer-parallel-debug
+description: Parallel root-cause hypotheses from multiple agents for a reported bug. Use when the user says "parallel debug", "llms-choreographer debug", "multiple hypotheses", or "debug with all agents".
 ---
 
-# Chorus: Parallel Debug
+# LLMs Choreographer: Parallel Debug
 
 ## When to use
 
 - Root cause of a bug is unclear
-- User says "parallel debug", "chorus debug", "hypotheses from all agents"
+- User says "parallel debug", "llms-choreographer debug", "hypotheses from all agents"
 
 ## Your role
 

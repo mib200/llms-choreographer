@@ -1,12 +1,12 @@
-# Chorus
+# LLMs Choreographer
 
 Cross-agent plugin collection for AI coding CLIs. Delegate tasks between Claude Code, OpenCode, Gemini CLI, Codex, Cursor, and Kilo.
 
-![chorus delegation mesh](docs/announcement/infographic.png)
+![llms-choreographer delegation mesh](docs/announcement/infographic.png)
 
 ## Overview
 
-Chorus connects six AI coding agents through a full delegation mesh. Every agent can delegate to every other agent (see [Known Limitations](#known-limitations) for OpenCode output capture constraints).
+LLMs Choreographer connects six AI coding agents through a full delegation mesh. Every agent can delegate to every other agent (see [Known Limitations](#known-limitations) for OpenCode output capture constraints).
 
 | From \ To | Claude | OpenCode | Gemini | Codex | Cursor | Kilo |
 |-----------|--------|----------|--------|-------|--------|------|
@@ -22,7 +22,7 @@ Chorus connects six AI coding agents through a full delegation mesh. Every agent
 ### Claude Code
 
 ```bash
-claude plugin install https://github.com/valpere/chorus
+claude plugin install https://github.com/valpere/llms-choreographer
 ```
 
 Adds slash commands:
@@ -34,16 +34,16 @@ Adds slash commands:
 - `/kilo:run`, `/kilo:review`, `/kilo:setup`
 
 **Workflow patterns** (orchestrate multiple agents at once):
-- `/chorus:council` — LLM council: five agents, different roles, you synthesize
-- `/chorus:review` — parallel code review from all five agents
-- `/chorus:debug` — parallel root-cause hypotheses for a bug symptom
-- `/chorus:second-opinion` — quick independent check from one agent (`--agent cursor|kilo` supported)
-- `/chorus:vote` — YES / NO / ABSTAIN poll from all five agents, tally returned
+- `/llms-choreographer:council` — LLM council: five agents, different roles, you synthesize
+- `/llms-choreographer:review` — parallel code review from all five agents
+- `/llms-choreographer:debug` — parallel root-cause hypotheses for a bug symptom
+- `/llms-choreographer:second-opinion` — quick independent check from one agent (`--agent cursor|kilo` supported)
+- `/llms-choreographer:vote` — YES / NO / ABSTAIN poll from all five agents, tally returned
 
 ### OpenCode
 
 ```bash
-opencode plugin @valpere/chorus-opencode
+opencode plugin @valpere/llms-choreographer-opencode
 ```
 
 Adds MCP tools:
@@ -63,139 +63,139 @@ Adds MCP tools:
 
 ```bash
 # Delegation skills
-gemini skills install https://github.com/valpere/chorus --path for-gemini/claude
-gemini skills install https://github.com/valpere/chorus --path for-gemini/opencode
-gemini skills install https://github.com/valpere/chorus --path for-gemini/codex
-gemini skills install https://github.com/valpere/chorus --path for-gemini/cursor
-gemini skills install https://github.com/valpere/chorus --path for-gemini/kilo
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/claude
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/opencode
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/codex
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/cursor
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/kilo
 
 # Workflow pattern skills
-gemini skills install https://github.com/valpere/chorus --path for-gemini/council
-gemini skills install https://github.com/valpere/chorus --path for-gemini/parallel-review
-gemini skills install https://github.com/valpere/chorus --path for-gemini/parallel-debug
-gemini skills install https://github.com/valpere/chorus --path for-gemini/second-opinion
-gemini skills install https://github.com/valpere/chorus --path for-gemini/vote
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/council
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/parallel-review
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/parallel-debug
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/second-opinion
+gemini skills install https://github.com/valpere/llms-choreographer --path for-gemini/vote
 ```
 
 Adds skills:
-- `chorus-claude` - Delegate to Claude Code
-- `chorus-opencode` - Delegate to OpenCode
-- `chorus-codex` - Delegate to Codex
-- `chorus-cursor` - Delegate to Cursor Agent CLI
-- `chorus-kilo` - Delegate to Kilo Code CLI
-- `chorus-council` - LLM council with all five agents
-- `chorus-parallel-review` - Parallel code review
-- `chorus-parallel-debug` - Parallel root-cause hypotheses
-- `chorus-second-opinion` - Quick independent second opinion
-- `chorus-vote` - YES/NO/ABSTAIN parallel vote
+- `llms-choreographer-claude` - Delegate to Claude Code
+- `llms-choreographer-opencode` - Delegate to OpenCode
+- `llms-choreographer-codex` - Delegate to Codex
+- `llms-choreographer-cursor` - Delegate to Cursor Agent CLI
+- `llms-choreographer-kilo` - Delegate to Kilo Code CLI
+- `llms-choreographer-council` - LLM council with all five agents
+- `llms-choreographer-parallel-review` - Parallel code review
+- `llms-choreographer-parallel-debug` - Parallel root-cause hypotheses
+- `llms-choreographer-second-opinion` - Quick independent second opinion
+- `llms-choreographer-vote` - YES/NO/ABSTAIN parallel vote
 
 ### Codex
 
 ```bash
-git clone https://github.com/valpere/chorus /tmp/chorus
+git clone https://github.com/valpere/llms-choreographer /tmp/llms-choreographer
 
 # Delegation skills
-mkdir -p ~/.codex/skills/chorus-claude ~/.codex/skills/chorus-opencode \
-         ~/.codex/skills/chorus-gemini ~/.codex/skills/chorus-cursor ~/.codex/skills/chorus-kilo
-cp /tmp/chorus/for-codex/claude/SKILL.md ~/.codex/skills/chorus-claude/
-cp /tmp/chorus/for-codex/opencode/SKILL.md ~/.codex/skills/chorus-opencode/
-cp /tmp/chorus/for-codex/gemini/SKILL.md ~/.codex/skills/chorus-gemini/
-cp /tmp/chorus/for-codex/cursor/SKILL.md ~/.codex/skills/chorus-cursor/
-cp /tmp/chorus/for-codex/kilo/SKILL.md ~/.codex/skills/chorus-kilo/
+mkdir -p ~/.codex/skills/llms-choreographer-claude ~/.codex/skills/llms-choreographer-opencode \
+         ~/.codex/skills/llms-choreographer-gemini ~/.codex/skills/llms-choreographer-cursor ~/.codex/skills/llms-choreographer-kilo
+cp /tmp/llms-choreographer/for-codex/claude/SKILL.md ~/.codex/skills/llms-choreographer-claude/
+cp /tmp/llms-choreographer/for-codex/opencode/SKILL.md ~/.codex/skills/llms-choreographer-opencode/
+cp /tmp/llms-choreographer/for-codex/gemini/SKILL.md ~/.codex/skills/llms-choreographer-gemini/
+cp /tmp/llms-choreographer/for-codex/cursor/SKILL.md ~/.codex/skills/llms-choreographer-cursor/
+cp /tmp/llms-choreographer/for-codex/kilo/SKILL.md ~/.codex/skills/llms-choreographer-kilo/
 
 # Workflow pattern skills
-mkdir -p ~/.codex/skills/chorus-council ~/.codex/skills/chorus-parallel-review \
-         ~/.codex/skills/chorus-parallel-debug ~/.codex/skills/chorus-second-opinion \
-         ~/.codex/skills/chorus-vote
-cp /tmp/chorus/for-codex/council/SKILL.md ~/.codex/skills/chorus-council/
-cp /tmp/chorus/for-codex/parallel-review/SKILL.md ~/.codex/skills/chorus-parallel-review/
-cp /tmp/chorus/for-codex/parallel-debug/SKILL.md ~/.codex/skills/chorus-parallel-debug/
-cp /tmp/chorus/for-codex/second-opinion/SKILL.md ~/.codex/skills/chorus-second-opinion/
-cp /tmp/chorus/for-codex/vote/SKILL.md ~/.codex/skills/chorus-vote/
+mkdir -p ~/.codex/skills/llms-choreographer-council ~/.codex/skills/llms-choreographer-parallel-review \
+         ~/.codex/skills/llms-choreographer-parallel-debug ~/.codex/skills/llms-choreographer-second-opinion \
+         ~/.codex/skills/llms-choreographer-vote
+cp /tmp/llms-choreographer/for-codex/council/SKILL.md ~/.codex/skills/llms-choreographer-council/
+cp /tmp/llms-choreographer/for-codex/parallel-review/SKILL.md ~/.codex/skills/llms-choreographer-parallel-review/
+cp /tmp/llms-choreographer/for-codex/parallel-debug/SKILL.md ~/.codex/skills/llms-choreographer-parallel-debug/
+cp /tmp/llms-choreographer/for-codex/second-opinion/SKILL.md ~/.codex/skills/llms-choreographer-second-opinion/
+cp /tmp/llms-choreographer/for-codex/vote/SKILL.md ~/.codex/skills/llms-choreographer-vote/
 ```
 
 Adds skills:
-- `chorus-claude` - Delegate to Claude Code
-- `chorus-opencode` - Delegate to OpenCode
-- `chorus-gemini` - Delegate to Gemini CLI
-- `chorus-cursor` - Delegate to Cursor Agent CLI
-- `chorus-kilo` - Delegate to Kilo Code CLI
-- `chorus-council` - LLM council with all five agents
-- `chorus-parallel-review` - Parallel code review
-- `chorus-parallel-debug` - Parallel root-cause hypotheses
-- `chorus-second-opinion` - Quick independent second opinion
-- `chorus-vote` - YES/NO/ABSTAIN parallel vote
+- `llms-choreographer-claude` - Delegate to Claude Code
+- `llms-choreographer-opencode` - Delegate to OpenCode
+- `llms-choreographer-gemini` - Delegate to Gemini CLI
+- `llms-choreographer-cursor` - Delegate to Cursor Agent CLI
+- `llms-choreographer-kilo` - Delegate to Kilo Code CLI
+- `llms-choreographer-council` - LLM council with all five agents
+- `llms-choreographer-parallel-review` - Parallel code review
+- `llms-choreographer-parallel-debug` - Parallel root-cause hypotheses
+- `llms-choreographer-second-opinion` - Quick independent second opinion
+- `llms-choreographer-vote` - YES/NO/ABSTAIN parallel vote
 
 ### Cursor
 
 ```bash
-git clone https://github.com/valpere/chorus /tmp/chorus
+git clone https://github.com/valpere/llms-choreographer /tmp/llms-choreographer
 
 mkdir -p .cursor/rules
 
 # Delegation rules
-cp /tmp/chorus/for-cursor/claude/RULE.mdc .cursor/rules/chorus-claude.mdc
-cp /tmp/chorus/for-cursor/opencode/RULE.mdc .cursor/rules/chorus-opencode.mdc
-cp /tmp/chorus/for-cursor/gemini/RULE.mdc .cursor/rules/chorus-gemini.mdc
-cp /tmp/chorus/for-cursor/codex/RULE.mdc .cursor/rules/chorus-codex.mdc
-cp /tmp/chorus/for-cursor/kilo/RULE.mdc .cursor/rules/chorus-kilo.mdc
+cp /tmp/llms-choreographer/for-cursor/claude/RULE.mdc .cursor/rules/llms-choreographer-claude.mdc
+cp /tmp/llms-choreographer/for-cursor/opencode/RULE.mdc .cursor/rules/llms-choreographer-opencode.mdc
+cp /tmp/llms-choreographer/for-cursor/gemini/RULE.mdc .cursor/rules/llms-choreographer-gemini.mdc
+cp /tmp/llms-choreographer/for-cursor/codex/RULE.mdc .cursor/rules/llms-choreographer-codex.mdc
+cp /tmp/llms-choreographer/for-cursor/kilo/RULE.mdc .cursor/rules/llms-choreographer-kilo.mdc
 
 # Workflow pattern rules
-cp /tmp/chorus/for-cursor/council/RULE.mdc .cursor/rules/chorus-council.mdc
-cp /tmp/chorus/for-cursor/parallel-review/RULE.mdc .cursor/rules/chorus-parallel-review.mdc
-cp /tmp/chorus/for-cursor/parallel-debug/RULE.mdc .cursor/rules/chorus-parallel-debug.mdc
-cp /tmp/chorus/for-cursor/second-opinion/RULE.mdc .cursor/rules/chorus-second-opinion.mdc
-cp /tmp/chorus/for-cursor/vote/RULE.mdc .cursor/rules/chorus-vote.mdc
+cp /tmp/llms-choreographer/for-cursor/council/RULE.mdc .cursor/rules/llms-choreographer-council.mdc
+cp /tmp/llms-choreographer/for-cursor/parallel-review/RULE.mdc .cursor/rules/llms-choreographer-parallel-review.mdc
+cp /tmp/llms-choreographer/for-cursor/parallel-debug/RULE.mdc .cursor/rules/llms-choreographer-parallel-debug.mdc
+cp /tmp/llms-choreographer/for-cursor/second-opinion/RULE.mdc .cursor/rules/llms-choreographer-second-opinion.mdc
+cp /tmp/llms-choreographer/for-cursor/vote/RULE.mdc .cursor/rules/llms-choreographer-vote.mdc
 ```
 
 Adds rules (activate via natural language in Cursor):
-- `chorus-claude` - Delegate to Claude Code
-- `chorus-opencode` - Delegate to OpenCode
-- `chorus-gemini` - Delegate to Gemini CLI
-- `chorus-codex` - Delegate to Codex
-- `chorus-kilo` - Delegate to Kilo Code CLI
-- `chorus-council` - LLM council with all five agents
-- `chorus-parallel-review` - Parallel code review
-- `chorus-parallel-debug` - Parallel root-cause hypotheses
-- `chorus-second-opinion` - Quick independent second opinion
-- `chorus-vote` - YES/NO/ABSTAIN parallel vote
+- `llms-choreographer-claude` - Delegate to Claude Code
+- `llms-choreographer-opencode` - Delegate to OpenCode
+- `llms-choreographer-gemini` - Delegate to Gemini CLI
+- `llms-choreographer-codex` - Delegate to Codex
+- `llms-choreographer-kilo` - Delegate to Kilo Code CLI
+- `llms-choreographer-council` - LLM council with all five agents
+- `llms-choreographer-parallel-review` - Parallel code review
+- `llms-choreographer-parallel-debug` - Parallel root-cause hypotheses
+- `llms-choreographer-second-opinion` - Quick independent second opinion
+- `llms-choreographer-vote` - YES/NO/ABSTAIN parallel vote
 
 ### Kilo
 
 ```bash
-git clone https://github.com/valpere/chorus /tmp/chorus
+git clone https://github.com/valpere/llms-choreographer /tmp/llms-choreographer
 
 # Delegation skills
-mkdir -p ~/.kilo/skills/chorus-claude ~/.kilo/skills/chorus-opencode \
-         ~/.kilo/skills/chorus-gemini ~/.kilo/skills/chorus-codex ~/.kilo/skills/chorus-cursor
-cp /tmp/chorus/for-kilo/claude/SKILL.md ~/.kilo/skills/chorus-claude/
-cp /tmp/chorus/for-kilo/opencode/SKILL.md ~/.kilo/skills/chorus-opencode/
-cp /tmp/chorus/for-kilo/gemini/SKILL.md ~/.kilo/skills/chorus-gemini/
-cp /tmp/chorus/for-kilo/codex/SKILL.md ~/.kilo/skills/chorus-codex/
-cp /tmp/chorus/for-kilo/cursor/SKILL.md ~/.kilo/skills/chorus-cursor/
+mkdir -p ~/.kilo/skills/llms-choreographer-claude ~/.kilo/skills/llms-choreographer-opencode \
+         ~/.kilo/skills/llms-choreographer-gemini ~/.kilo/skills/llms-choreographer-codex ~/.kilo/skills/llms-choreographer-cursor
+cp /tmp/llms-choreographer/for-kilo/claude/SKILL.md ~/.kilo/skills/llms-choreographer-claude/
+cp /tmp/llms-choreographer/for-kilo/opencode/SKILL.md ~/.kilo/skills/llms-choreographer-opencode/
+cp /tmp/llms-choreographer/for-kilo/gemini/SKILL.md ~/.kilo/skills/llms-choreographer-gemini/
+cp /tmp/llms-choreographer/for-kilo/codex/SKILL.md ~/.kilo/skills/llms-choreographer-codex/
+cp /tmp/llms-choreographer/for-kilo/cursor/SKILL.md ~/.kilo/skills/llms-choreographer-cursor/
 
 # Workflow pattern skills
-mkdir -p ~/.kilo/skills/chorus-council ~/.kilo/skills/chorus-parallel-review \
-         ~/.kilo/skills/chorus-parallel-debug ~/.kilo/skills/chorus-second-opinion \
-         ~/.kilo/skills/chorus-vote
-cp /tmp/chorus/for-kilo/council/SKILL.md ~/.kilo/skills/chorus-council/
-cp /tmp/chorus/for-kilo/parallel-review/SKILL.md ~/.kilo/skills/chorus-parallel-review/
-cp /tmp/chorus/for-kilo/parallel-debug/SKILL.md ~/.kilo/skills/chorus-parallel-debug/
-cp /tmp/chorus/for-kilo/second-opinion/SKILL.md ~/.kilo/skills/chorus-second-opinion/
-cp /tmp/chorus/for-kilo/vote/SKILL.md ~/.kilo/skills/chorus-vote/
+mkdir -p ~/.kilo/skills/llms-choreographer-council ~/.kilo/skills/llms-choreographer-parallel-review \
+         ~/.kilo/skills/llms-choreographer-parallel-debug ~/.kilo/skills/llms-choreographer-second-opinion \
+         ~/.kilo/skills/llms-choreographer-vote
+cp /tmp/llms-choreographer/for-kilo/council/SKILL.md ~/.kilo/skills/llms-choreographer-council/
+cp /tmp/llms-choreographer/for-kilo/parallel-review/SKILL.md ~/.kilo/skills/llms-choreographer-parallel-review/
+cp /tmp/llms-choreographer/for-kilo/parallel-debug/SKILL.md ~/.kilo/skills/llms-choreographer-parallel-debug/
+cp /tmp/llms-choreographer/for-kilo/second-opinion/SKILL.md ~/.kilo/skills/llms-choreographer-second-opinion/
+cp /tmp/llms-choreographer/for-kilo/vote/SKILL.md ~/.kilo/skills/llms-choreographer-vote/
 ```
 
 Adds skills:
-- `chorus-claude` - Delegate to Claude Code
-- `chorus-opencode` - Delegate to OpenCode
-- `chorus-gemini` - Delegate to Gemini CLI
-- `chorus-codex` - Delegate to Codex
-- `chorus-cursor` - Delegate to Cursor Agent CLI
-- `chorus-council` - LLM council with all five agents
-- `chorus-parallel-review` - Parallel code review
-- `chorus-parallel-debug` - Parallel root-cause hypotheses
-- `chorus-second-opinion` - Quick independent second opinion
-- `chorus-vote` - YES/NO/ABSTAIN parallel vote
+- `llms-choreographer-claude` - Delegate to Claude Code
+- `llms-choreographer-opencode` - Delegate to OpenCode
+- `llms-choreographer-gemini` - Delegate to Gemini CLI
+- `llms-choreographer-codex` - Delegate to Codex
+- `llms-choreographer-cursor` - Delegate to Cursor Agent CLI
+- `llms-choreographer-council` - LLM council with all five agents
+- `llms-choreographer-parallel-review` - Parallel code review
+- `llms-choreographer-parallel-debug` - Parallel root-cause hypotheses
+- `llms-choreographer-second-opinion` - Quick independent second opinion
+- `llms-choreographer-vote` - YES/NO/ABSTAIN parallel vote
 
 ## Usage Examples
 
@@ -266,17 +266,17 @@ kilo run --auto "Run a council on whether to use Redis or Postgres for this queu
 
 ## Workflow Patterns
 
-Chorus ships five workflow pattern commands. The multi-agent workflows (`/chorus:council`, `/chorus:review`, `/chorus:debug`, `/chorus:vote`) orchestrate **multiple agents in parallel**; `/chorus:second-opinion` runs with a single agent and falls back automatically if the requested agent is unavailable. Install the `chorus` plugin once to access all five.
+LLMs Choreographer ships five workflow pattern commands. The multi-agent workflows (`/llms-choreographer:council`, `/llms-choreographer:review`, `/llms-choreographer:debug`, `/llms-choreographer:vote`) orchestrate **multiple agents in parallel**; `/llms-choreographer:second-opinion` runs with a single agent and falls back automatically if the requested agent is unavailable. Install the `llms-choreographer` plugin once to access all five.
 
-**Graceful degradation:** All workflows check agent availability at runtime. Missing agents are reported in the output with install instructions. For `council`, `review`, and `debug`, the command proceeds with the available subset — a minimum of 2 agents is required. `/chorus:second-opinion` requires only 1 available agent.
+**Graceful degradation:** All workflows check agent availability at runtime. Missing agents are reported in the output with install instructions. For `council`, `review`, and `debug`, the command proceeds with the available subset — a minimum of 2 agents is required. `/llms-choreographer:second-opinion` requires only 1 available agent.
 
 ### LLM Council
 
 Five agents tackle the same task with different roles; the host synthesizes as chairman.
 
 ```bash
-/chorus:council "Should we use optimistic locking or a distributed lock for this feature?"
-/chorus:council --background "Review the architecture of the new auth service"
+/llms-choreographer:council "Should we use optimistic locking or a distributed lock for this feature?"
+/llms-choreographer:council --background "Review the architecture of the new auth service"
 ```
 
 ### Parallel Review
@@ -284,8 +284,8 @@ Five agents tackle the same task with different roles; the host synthesizes as c
 All five agents review the current `git diff HEAD` simultaneously, each with a different focus (correctness, edge cases, scope, integration, maintainability).
 
 ```bash
-/chorus:review --wait
-/chorus:review --background
+/llms-choreographer:review --wait
+/llms-choreographer:review --background
 ```
 
 ### Parallel Debug
@@ -293,7 +293,7 @@ All five agents review the current `git diff HEAD` simultaneously, each with a d
 All five agents propose root-cause hypotheses for a symptom; the host synthesizes an investigation plan.
 
 ```bash
-/chorus:debug "Checkout fails intermittently with a 500 — only in production, never in staging"
+/llms-choreographer:debug "Checkout fails intermittently with a 500 — only in production, never in staging"
 ```
 
 ### Second Opinion
@@ -301,11 +301,11 @@ All five agents propose root-cause hypotheses for a symptom; the host synthesize
 Quick independent check from one agent. Default: Gemini. Override with `--agent`.
 
 ```bash
-/chorus:second-opinion "Use a ULID instead of UUID for the new events table primary key"
-/chorus:second-opinion --agent claude "Cache the auth token in localStorage vs sessionStorage"
-/chorus:second-opinion --agent codex "Extract this 30-line block into a shared utility"
-/chorus:second-opinion --agent cursor "Does this change fit the existing patterns in this repo?"
-/chorus:second-opinion --agent kilo "Is this function name clear enough for future maintainers?"
+/llms-choreographer:second-opinion "Use a ULID instead of UUID for the new events table primary key"
+/llms-choreographer:second-opinion --agent claude "Cache the auth token in localStorage vs sessionStorage"
+/llms-choreographer:second-opinion --agent codex "Extract this 30-line block into a shared utility"
+/llms-choreographer:second-opinion --agent cursor "Does this change fit the existing patterns in this repo?"
+/llms-choreographer:second-opinion --agent kilo "Is this function name clear enough for future maintainers?"
 ```
 
 ### Parallel Vote
@@ -313,26 +313,26 @@ Quick independent check from one agent. Default: Gemini. Override with `--agent`
 YES / NO / ABSTAIN poll from all five agents. Use when you want a decision signal rather than discussion.
 
 ```bash
-/chorus:vote "Adopt TypeScript for new files in this repo?"
-/chorus:vote "Add Redis as a dependency for session caching?"
-/chorus:vote --json "Use optimistic locking for this resource?"
+/llms-choreographer:vote "Adopt TypeScript for new files in this repo?"
+/llms-choreographer:vote "Add Redis as a dependency for session caching?"
+/llms-choreographer:vote --json "Use optimistic locking for this resource?"
 ```
 
-The output is a tally table plus one-sentence rationale per agent. Use `/chorus:council` when you want reasoning and trade-offs; use `/chorus:vote` when you want a thumbs-up/thumbs-down count.
+The output is a tally table plus one-sentence rationale per agent. Use `/llms-choreographer:council` when you want reasoning and trade-offs; use `/llms-choreographer:vote` when you want a thumbs-up/thumbs-down count.
 
-### Using chorus in Claude Code Plan mode
+### Using llms-choreographer in Claude Code Plan mode
 
-Claude Code's Plan mode is a good entry point for chorus workflows. When you enter Plan mode before a complex feature, call `/chorus:council` to get multi-agent input before committing to an approach, or `/chorus:second-opinion` for a quick sanity check on a specific decision.
+Claude Code's Plan mode is a good entry point for llms-choreographer workflows. When you enter Plan mode before a complex feature, call `/llms-choreographer:council` to get multi-agent input before committing to an approach, or `/llms-choreographer:second-opinion` for a quick sanity check on a specific decision.
 
 ```bash
 # During architecture planning — get five perspectives before writing code
-/chorus:council "We need to add distributed rate limiting. Redis vs in-memory vs a dedicated proxy?"
+/llms-choreographer:council "We need to add distributed rate limiting. Redis vs in-memory vs a dedicated proxy?"
 
 # Quick check on a specific design choice
-/chorus:second-opinion --agent codex "Is a factory function better than a class here?"
+/llms-choreographer:second-opinion --agent codex "Is a factory function better than a class here?"
 ```
 
-The council output feeds directly into your plan: consensus points become confirmed requirements, disagreements surface trade-offs worth deciding before implementation starts. Use `/chorus:vote` for quick yes/no decisions ("should we add Redis?", "adopt TypeScript?") where a tally is more useful than a discussion.
+The council output feeds directly into your plan: consensus points become confirmed requirements, disagreements surface trade-offs worth deciding before implementation starts. Use `/llms-choreographer:vote` for quick yes/no decisions ("should we add Redis?", "adopt TypeScript?") where a tally is more useful than a discussion.
 
 ---
 
@@ -343,7 +343,7 @@ All `run` and `review` commands support two execution modes:
 - `--wait` (or no flag with user confirmation) - Run in foreground and return results immediately
 - `--background` - Run as a background task and notify when complete
 
-The five chorus workflow commands (`council`, `review`, `debug`, `second-opinion`, `vote`) also support:
+The five llms-choreographer workflow commands (`council`, `review`, `debug`, `second-opinion`, `vote`) also support:
 
 - `--json` - Emit structured JSON on stdout instead of delimited text. Warnings about unavailable agents still go to stderr. Useful for scripting or programmatic consumption of agent output.
   - `council` / `review` / `debug` / `second-opinion`: `{"command":"<cmd>","results":[{"name":"...","output":"...","error":"...","exitCode":0}]}`
@@ -359,12 +359,12 @@ The five chorus workflow commands (`council`, `review`, `debug`, `second-opinion
 - [Cursor Agent CLI](https://cursor.com/docs/cli) (`agent` binary, optional — for Cursor delegation)
 - [Kilo Code CLI](https://kilo.ai/docs/cli) (`kilo` binary, optional — for Kilo delegation)
 
-Not all agents need to be installed. `/chorus:second-opinion` works with at least 1 available agent; the other multi-agent workflows (`council`, `review`, `debug`) require at least 2.
+Not all agents need to be installed. `/llms-choreographer:second-opinion` works with at least 1 available agent; the other multi-agent workflows (`council`, `review`, `debug`) require at least 2.
 
 ## Project Structure
 
 ```
-chorus/
+llms-choreographer/
 ├── .claude-plugin/
 │   └── marketplace.json       # Claude Code plugin marketplace
 ├── plugins/                   # Claude Code plugins
@@ -374,7 +374,7 @@ chorus/
 │   ├── codex/                 # Codex plugin
 │   ├── cursor/                # Cursor Agent CLI plugin
 │   ├── kilo/                  # Kilo Code CLI plugin
-│   └── chorus/                # Workflow patterns (council, review, debug, second-opinion, vote)
+│   └── llms-choreographer/                # Workflow patterns (council, review, debug, second-opinion, vote)
 ├── for-gemini/                # Gemini CLI skills
 │   ├── claude/SKILL.md
 │   ├── opencode/SKILL.md
@@ -436,7 +436,7 @@ current working directory. When you delegate a task to Codex from another agent,
 Codex can only read files **within the directory where it was launched** — not
 arbitrary paths on the system.
 
-**Practical impact:** If you invoke `/codex:run` or `chorus-codex` from a
+**Practical impact:** If you invoke `/codex:run` or `llms-choreographer-codex` from a
 project outside Codex's working directory (e.g. running Claude Code in
 `~/wrk/projectA` but Codex is launched in `~/wrk/common`), Codex will produce
 metadata-only output (file sizes, directory structure) instead of content-based
@@ -448,7 +448,7 @@ use `codex --no-sandbox` if your environment supports it.
 ### OpenCode stdout is not capturable
 
 `opencode run` is a TUI application — it writes ANSI output to the terminal but
-does not expose stdout for programmatic capture. Chorus uses `claude --print` as
+does not expose stdout for programmatic capture. LLMs Choreographer uses `claude --print` as
 a proxy when a third council voice is needed from within Claude Code.
 
 **Practical impact:** The `delegate_claude` MCP tool in the OpenCode plugin

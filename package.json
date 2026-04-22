@@ -1,7 +1,8 @@
 {
   "name": "llms-choreographer",
+  "author": "Manish Kumar",
   "version": "1.0.0",
-  "description": "Choreographer and delegate tasks between Claude Code, OpenCode, Codex and Kilo for sub-agents, peer reviews, second opinions and more",
+  "description": "Choreograph and delegate tasks between Claude Code, OpenCode, Codex and Kilo for sub-agents, peer reviews, second opinions and more",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"

@@ -1,9 +1,9 @@
 ---
-name: chorus-second-opinion
+name: llms-choreographer-second-opinion
 description: Quick independent second opinion from one agent on a decision or approach. The agent gives a verdict — approve, approve-with-caveats, or reject. Use when the user says "second opinion", "sanity check", "quick check", or "what does X think".
 ---
 
-# Chorus: Second Opinion
+# LLMs Choreographer: Second Opinion
 
 ## When to use
 

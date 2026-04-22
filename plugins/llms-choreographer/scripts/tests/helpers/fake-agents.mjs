@@ -30,7 +30,7 @@ const BINARY_MAP = {
  * @returns {{ path: string, cleanup: () => void }}
  */
 export function createFakeAgents(names, { unavailable = [], script, tmpBase } = {}) {
-  const dir = mkdtempSync(join(tmpBase ?? tmpdir(), 'chorus-fake-'));
+  const dir = mkdtempSync(join(tmpBase ?? tmpdir(), 'llms-choreographer-fake-'));
 
   for (const agentName of names) {
     const binary = BINARY_MAP[agentName] ?? agentName;

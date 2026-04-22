@@ -1,9 +1,9 @@
 ---
-name: chorus-council
+name: llms-choreographer-council
 description: Run an LLM council — Claude (correctness), Gemini (edge cases), Cursor (integration), Kilo (maintainability), and you (scope) tackle the same task in parallel. Use when the user wants multiple independent perspectives on a decision, approach, or problem.
 ---
 
-# Chorus: LLM Council
+# LLMs Choreographer: LLM Council
 
 ## When to use
 

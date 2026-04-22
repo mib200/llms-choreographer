@@ -10,7 +10,7 @@ Put a yes/no proposition to five agents in parallel and return a tally.
 Raw slash-command arguments:
 `$ARGUMENTS`
 
-**Use when you want a decision signal, not synthesis.** The tally reveals whether there is consensus. Use `/chorus:council` when you want reasoning and trade-offs instead.
+**Use when you want a decision signal, not synthesis.** The tally reveals whether there is consensus. Use `/llms-choreographer:council` when you want reasoning and trade-offs instead.
 
 **Vote semantics:**
 - Each agent replies `YES`, `NO`, or `ABSTAIN` followed by one sentence of rationale.

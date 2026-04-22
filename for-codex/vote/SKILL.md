@@ -1,9 +1,9 @@
 ---
-name: chorus-vote
+name: llms-choreographer-vote
 description: Put a yes/no proposition to five agents and tally YES / NO / ABSTAIN votes when the user wants a quick decision signal.
 ---
 
-# Chorus: Parallel Vote
+# LLMs Choreographer: Parallel Vote
 
 ## When to use
 

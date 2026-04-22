@@ -1,9 +1,9 @@
 ---
-name: chorus-claude
+name: llms-choreographer-claude
 description: Delegate a task to Claude Code for a second opinion or alternative analysis.
 ---
 
-# Chorus: Delegate to Claude
+# LLMs Choreographer: Delegate to Claude
 
 This skill delegates tasks to Claude Code when the user asks for a second opinion from Claude or wants to compare answers.
 

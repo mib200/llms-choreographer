@@ -1,9 +1,9 @@
 ---
-name: chorus-opencode
+name: llms-choreographer-opencode
 description: Delegate a task to OpenCode for a second opinion or alternative analysis.
 ---
 
-# Chorus: Delegate to OpenCode
+# LLMs Choreographer: Delegate to OpenCode
 
 This skill delegates tasks to OpenCode when the user asks for a second opinion or wants to compare answers.
 
