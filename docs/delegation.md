@@ -1,5 +1,7 @@
 # Delegation Round-Trip Reference
 
+> See also: [Codebase Summary](./codebase-summary.md) · [System Architecture](./system-architecture.md) · [Deployment Guide](./deployment-guide.md)
+
 How each agent delegates to every other agent via the `choreo` plugin.
 
 ## Round-Trip Matrix

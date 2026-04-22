@@ -1,5 +1,7 @@
 # Project Overview / PDR: Choreographer
 
+> See also: [Codebase Summary](./codebase-summary.md) · [System Architecture](./system-architecture.md) · [Deployment Guide](./deployment-guide.md) · [Testing Guide](./testing-guide.md) · [Delegation Reference](./delegation.md)
+
 **Package:** `@mib200/choreographer-monorepo` v1.0.0
 **Marketplace:** `mib200` · **Plugin:** `choreo`
 **Author:** Manish Kumar · **License:** MIT · **Runtime:** Node ≥ 22
@@ -74,29 +76,33 @@ choreographer/
 ### `core/runners.mjs`
 
 - `REGISTRY` — agent definitions: binary name + `/choreo:*` setup hint
-- `checkCli(binary)` — spawnSync `--version`, returns status
-- `requireAvailable(agents, min)` — asserts availability, exits with install hint
-- `runAgent(name, binary, args, parse)` — async spawn, buffers stdout/stderr
+- `checkCli(binary)` — spawnSync `--version`, returns `{ status, version }`
+- `filterAvailable(agents)` — splits into `{ available, missing }`
+- `requireAvailable(agents, min)` — asserts min count, exits with install hint
+- `runAgent(name, binary, args, parse)` — spawns subprocess, returns `{ name, output, error, code }`
+- `printDelimited(results)` — bordered per-agent human output
+- `printJSON(command, results)` — `{ command, results[] }` JSON envelope
+- `stripFlags(args)` — removes `--json`, `--background`, `--wait`, `--agent[=]`
 
 ### `core/parsers.mjs`
 
-- `parseClaudeStreamJson(raw)` — extracts assistant text from `stream-json` event stream
-- `parseOpenCodeOutput(raw)` — strips ANSI codes, filters empty lines
+- `parseClaudeStreamJson(raw)` — extracts assistant text from `--output-format stream-json --verbose` event stream
+- `parseOpenCodeOutput(raw)` — strips ANSI codes and empty lines
 
 ### Workflow patterns
 
-| Pattern | Subcommand | Min agents |
-|---------|------------|-----------|
+| Pattern | CLI subcommand | Min agents |
+|---------|----------------|------------|
 | Council | `council` | 2 |
-| Parallel review | `review` | 2 |
-| Parallel debug | `debug` | 2 |
+| Parallel review | `parallel-review` | 2 |
+| Parallel debug | `parallel-debug` | 2 |
 | Second opinion | `second-opinion` | 1 (with fallback) |
 | Vote | `vote` | 2 |
-| Check | `check-all` | — |
+| Check availability | `check-all` | — |
 
 ### Tests
 
-32 assertions across 7 files in `core/tests/`. Uses fake-agent binaries injected via PATH. Run with `npm test`.
+32 assertions across 7 files in `core/tests/`. Uses fake-agent binaries injected via `PATH` (`helpers/fake-agents.mjs`). Run with `npm test`.
 
 ## 5. Non-Goals / Scope
 

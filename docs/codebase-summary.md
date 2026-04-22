@@ -1,9 +1,13 @@
 # Codebase Summary — Choreographer
 
+> See also: [Project Overview / PDR](./project-overview-pdr.md) · [System Architecture](./system-architecture.md) · [Deployment Guide](./deployment-guide.md) · [Testing Guide](./testing-guide.md) · [Delegation Reference](./delegation.md)
+
 ## Overview
 
 Monorepo with one shared core library bundled into three runtime-specific plugins (Claude Code, Codex, OpenCode) via esbuild. One marketplace name (`mib200`), one plugin name (`choreo`), one namespace (`/choreo:*` for Claude/Codex, `/choreo-*` for OpenCode).
 
+**Package:** `@mib200/choreographer-monorepo` v1.0.0  
+**Runtime:** Node ≥ 22  
 **Agents:** Claude Code, Codex, OpenCode
 
 ## Directory Inventory
@@ -32,7 +36,7 @@ Monorepo with one shared core library bundled into three runtime-specific plugin
 | Path | Purpose |
 |------|---------|
 | `.codex-plugin/plugin.json` | Plugin manifest — name: `choreo`, skills: `./skills` |
-| `skills/*/SKILL.md` | 9 skills: claude, codex, opencode, council, parallel-review, parallel-debug, second-opinion, vote, debug |
+| `skills/*/SKILL.md` | 9 skills: `claude`, `codex`, `opencode`, `council`, `parallel-review`, `parallel-debug`, `second-opinion`, `vote`, `debug` |
 | `src/entry.mjs` | esbuild entry |
 | `scripts/companion.mjs` | **esbuild output** |
 
@@ -67,18 +71,30 @@ Claude Code marketplace — `name: "mib200"`, one plugin: `choreo` → `./plugin
 
 Codex marketplace — `name: "mib200"`, one plugin: `choreo` → `./plugin-codex`.
 
-## Key Exports (`core/runners.mjs`)
+## Key Exports (`core/companion.mjs` re-exports all)
+
+`core/companion.mjs` is both the CLI entry point and the re-export barrel. All symbols below are importable from it.
+
+### `core/runners.mjs`
 
 | Export | Description |
 |--------|-------------|
 | `REGISTRY` | `{ claude, codex, opencode }` — binary names + `/choreo:*` setup hints |
 | `checkCli(binary)` | Returns `{ status: 'ok'\|'not-installed'\|'unavailable', version }` |
 | `filterAvailable(agents)` | Splits agents into `{ available, missing }` |
+| `printMissingWarning(missing)` | Prints install hints for unavailable agents to stderr |
 | `requireAvailable(agents, min)` | Asserts min count; exits with install hint on failure |
 | `runAgent(name, binary, args, parse)` | Spawns agent subprocess, returns `{ name, output, error, code }` |
 | `printDelimited(results)` | Human-readable bordered output per agent |
 | `printJSON(command, results)` | JSON output `{ command, results[] }` |
 | `stripFlags(args)` | Strips `--json`, `--background`, `--wait`, `--agent[=]` |
+
+### `core/parsers.mjs`
+
+| Export | Description |
+|--------|-------------|
+| `parseClaudeStreamJson(raw)` | Extracts assistant text from `--output-format stream-json --verbose` event stream |
+| `parseOpenCodeOutput(raw)` | Strips ANSI escape codes and empty lines from OpenCode output |
 
 ## Test Structure
 
@@ -120,5 +136,7 @@ node core/companion.mjs vote "proposition"
 
 - Single-agent delegation commands (`/choreo:claude` etc.) currently route through `council` (all available agents). No single-agent dispatch mode yet.
 - OpenCode output is plain text + ANSI, stripped by `parseOpenCodeOutput`.
-- Claude subprocess requires `--output-format=stream-json --verbose` on Bedrock.
+- Claude subprocess requires `--output-format=stream-json --verbose` on Bedrock; plain `--print` returns empty `result` field.
+- `${CLAUDE_PLUGIN_ROOT}` uses curly braces — required for Claude Code template substitution.
 - No git remote configured — install is local only until remote is added.
+- `@mib200/choreo-opencode` npm package structure is written but not published.
