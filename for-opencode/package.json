@@ -1,0 +1,27 @@
+{
+  "name": "@valpere/chorus-opencode",
+  "version": "1.1.0",
+  "description": "OpenCode plugin: delegate to Claude, Gemini, Codex, Cursor, or Kilo, or run multi-agent workflows (council, parallel review/debug, second opinion, vote)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": "./src/index.js",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "keywords": [
+    "opencode",
+    "mcp",
+    "plugin",
+    "claude",
+    "gemini",
+    "codex",
+    "cursor",
+    "kilo",
+    "vote"
+  ],
+  "author": "valpere",
+  "license": "MIT"
+}
