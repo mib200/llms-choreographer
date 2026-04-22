@@ -2,9 +2,9 @@
 
 ## Overview
 
-Cross-agent plugin collection connecting five AI coding CLIs in a full 5×5 delegation mesh. Every agent can delegate to every other agent via plugins, skills, or MCP tools.
+Cross-agent plugin collection connecting AI coding CLIs in a full delegation mesh. Every agent can delegate to every other via plugins, skills, or slash commands.
 
-**Agents:** Claude Code, OpenCode, Gemini CLI, Codex, Cursor Agent CLI, Kilo Code CLI
+**Agents:** Claude Code, OpenCode, Codex
 
 ---
 
@@ -36,14 +36,22 @@ Each plugin dir contains:
 | `commands/vote.md` | Slash-command spec: majority-vote across agents |
 | `scripts/tests/` | Smoke tests (see Test Structure below) |
 
-### `for-opencode/` — OpenCode MCP server
+### `.opencode/commands/` — OpenCode slash commands
+
+Zero per-turn token cost — loaded only when user types `/`.
 
 | File | Purpose |
 |------|---------|
-| `src/index.js` | MCP stdio server. Exposes: `delegate_*` tools, `check_agents`, `council`, `parallel_review`, `parallel_debug`, `second_opinion`, `vote` |
-| `src/tests/mcp.test.mjs` | Hermetic MCP server tests |
-| `src/tests/helpers/mcp-session.mjs` | MCP session test helper |
-| `package.json` | npm package manifest for MCP server |
+| `delegate-claude.md` | Run `claude --print` with given task, return output |
+| `delegate-codex.md` | Run `codex exec` with given task, return output |
+| `check-agents.md` | Report ✓/✗ availability of claude and codex |
+| `council.md` | Claude (correctness) + Codex (scope) in parallel |
+| `parallel-review.md` | Review `git diff HEAD` with both agents |
+| `parallel-debug.md` | Root-cause hypotheses from both agents |
+| `second-opinion.md` | Quick approve/caveat/reject from Claude |
+| `vote.md` | YES/NO/ABSTAIN tally from both agents |
+| `_helpers/run-parallel.sh` | Spawn two CLIs in parallel, delimit output |
+| `_helpers/parse-vote.sh` | Extract YES/NO/ABSTAIN from agent stdout |
 
 ### `for-codex/` — Codex skills
 
@@ -61,11 +69,9 @@ One `SKILL.md` per delegation target: `claude`, `codex`, `council`, `opencode`, 
 
 ```js
 const REGISTRY = {
-  claude: { binary: 'claude', setup: '/claude:setup' },
-  gemini: { binary: 'gemini', setup: '/gemini:setup' },
-  codex:  { binary: 'codex',  setup: '/codex:setup'  },
-  cursor: { binary: 'agent',  setup: '/cursor:setup'  },
-  kilo:   { binary: 'kilo',   setup: '/kilo:setup'    },
+  claude:    { binary: 'claude',    setup: '/claude:setup' },
+  codex:     { binary: 'codex',     setup: '/codex:setup'  },
+  opencode:  { binary: 'opencode',  setup: '/opencode:setup' },
 };
 ```
 
@@ -82,28 +88,19 @@ const REGISTRY = {
 | `check-all.test.mjs` | `checkCli` / `filterAvailable` |
 | `json-output.test.mjs` | JSONL output formatting |
 | `min-agents.test.mjs` | Minimum agent count enforcement |
+| `parse-opencode.test.mjs` | `parseOpenCodeNdJson` fixture tests |
 | `second-opinion-fallback.test.mjs` | Fallback behavior when only 1 agent available |
 | `strip-flags.test.mjs` | `stripFlags` helper |
 | `vote.test.mjs` | Vote subcommand logic |
 | `helpers/fake-agents.mjs` | Shared test fixture |
 
-### MCP server tests (`for-opencode/src/tests/`)
-
-| File | Covers |
-|------|--------|
-| `mcp.test.mjs` | tools/list, check_agents, council, second_opinion, vote |
-| `helpers/mcp-session.mjs` | MCP session helper |
-
-**Total: 9 test files. Run with:** `npm test`
-
-> Note: `npm test` currently runs a stub (exits 0, prints "Running tests..."). Full test execution: `node --test plugins/llms-choreographer/scripts/tests/*.test.mjs` and `node --test for-opencode/src/tests/mcp.test.mjs`.
+**Total: 7 test files. Run with:** `npm test`
 
 ---
 
 ## Dependencies
 
-- **Runtime:** Node.js (no external npm deps in companion.mjs)
-- **MCP server:** `for-opencode/package.json` (npm package)
+- **Runtime:** Node.js ≥ 22 (no external npm deps in companion.mjs)
 - **Test runner:** `node --test` (Node.js built-in)
 
 ---
@@ -127,7 +124,7 @@ npm test
 
 ## Known Limitations
 
-- **OpenCode TUI:** stdout not capturable — excluded from parallel workflow patterns
 - **Codex sandbox:** file access limited to working directory
+- **OpenCode slash commands are user-initiated:** the OpenCode model cannot self-invoke them mid-reasoning
 - `council`, `review`, `debug`, `vote` require ≥2 available agents (exit non-zero otherwise)
 - `second-opinion` requires ≥1 agent

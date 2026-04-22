@@ -1,6 +1,6 @@
 # Delegation Round-Trip Reference
 
-All six directions between Claude Code, Codex, and OpenCode are operational. No upstream changes required.
+All six directions between Claude Code, Codex, and OpenCode are operational.
 
 ## Round-Trip Matrix
 
@@ -10,8 +10,8 @@ All six directions between Claude Code, Codex, and OpenCode are operational. No 
 | Claude → OpenCode | `spawn('opencode', ['run', task, '--format', 'json', '--dangerously-skip-permissions'], {stdio:['ignore','pipe','pipe']})` + ndJSON parse | `plugins/opencode/scripts/companion.mjs` |
 | Codex → Claude | `claude --print "<task>" --dangerously-skip-permissions` (Codex shell) | `for-codex/claude/SKILL.md` |
 | Codex → OpenCode | `opencode run "<task>" --format json --dangerously-skip-permissions` (Codex shell) | `for-codex/opencode/SKILL.md` |
-| OpenCode → Claude | `delegate_claude` MCP tool → `spawn('claude', ['--print', task, '--dangerously-skip-permissions'])` | `for-opencode/src/index.js:delegateToClaude` |
-| OpenCode → Codex | `delegate_codex` MCP tool → `spawn('codex', ['exec', task])` | `for-opencode/src/index.js:delegateToCodex` |
+| OpenCode → Claude | `/delegate-claude <task>` slash command → `claude --print` | `.opencode/commands/delegate-claude.md` |
+| OpenCode → Codex | `/delegate-codex <task>` slash command → `codex exec` | `.opencode/commands/delegate-codex.md` |
 
 ## Code Snippets
 
@@ -65,33 +65,17 @@ opencode run "<task>" --format json --dangerously-skip-permissions
 # {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
 ```
 
-### OpenCode → Claude (`for-opencode/src/index.js:delegateToClaude`)
-```js
-async function delegateToClaude(task) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('claude', ['--print', task, '--dangerously-skip-permissions'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let out = '';
-    proc.stdout.on('data', d => { out += d; });
-    proc.on('close', code => code === 0 ? resolve(out.trim()) : reject(new Error(out)));
-  });
-}
+### OpenCode → Claude (`.opencode/commands/delegate-claude.md`)
+```bash
+claude --print "$ARGUMENTS" --dangerously-skip-permissions
 ```
+OpenCode user types `/delegate-claude <task>`. Shell output captured and injected into the prompt context.
 
-### OpenCode → Codex (`for-opencode/src/index.js:delegateToCodex`)
-```js
-async function delegateToCodex(task) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('codex', ['exec', task], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let out = '';
-    proc.stdout.on('data', d => { out += d; });
-    proc.on('close', code => code === 0 ? resolve(out.trim()) : reject(new Error(out)));
-  });
-}
+### OpenCode → Codex (`.opencode/commands/delegate-codex.md`)
+```bash
+codex exec "$ARGUMENTS"
 ```
+OpenCode user types `/delegate-codex <task>`. Shell output captured and injected into the prompt context.
 
 ## Worked Example: Claude → OpenCode
 
@@ -105,6 +89,32 @@ Claude Code calls `plugins/opencode/scripts/companion.mjs run "explain closures 
 2. Buffers the ndJSON event stream from stdout
 3. Extracts all `{"type":"assistant"}` text blocks
 4. Returns the concatenated text as the Bash tool result back to Claude Code
+
+## Worked Example: OpenCode → Claude
+
+Inside an OpenCode session, type:
+```
+/delegate-claude explain closures in JavaScript
+```
+
+OpenCode runs `claude --print "explain closures in JavaScript" --dangerously-skip-permissions`, captures stdout, and injects it into the conversation context.
+
+## OpenCode Slash Commands
+
+All eight orchestration commands available inside OpenCode sessions via `.opencode/commands/`:
+
+| Command | Purpose |
+|---------|---------|
+| `/delegate-claude <task>` | Delegate to Claude Code, return output |
+| `/delegate-codex <task>` | Delegate to Codex, return output |
+| `/check-agents` | Report ✓/✗ availability of claude and codex |
+| `/council <task>` | Claude (correctness) + Codex (scope) in parallel |
+| `/parallel-review` | Review current `git diff HEAD` with both agents |
+| `/parallel-debug <symptom>` | Root-cause hypotheses from both agents |
+| `/second-opinion <approach>` | Quick approve/caveat/reject from Claude |
+| `/vote <proposition>` | YES/NO/ABSTAIN tally from both agents |
+
+Zero per-turn token cost — commands are lazy-loaded only when invoked.
 
 ## Warm-Server Mode (Optional)
 
@@ -123,3 +133,4 @@ When `OPENCODE_SERVER_URL` is set, the companion appends `--attach $OPENCODE_SER
 - **OpenCode ndJSON format**: only `{"type":"assistant"}` events carry assistant text. Progress events (`tool_use`, `tool_result`, etc.) are silently skipped by the parser.
 - **Session continuity**: pass `--session <id>` or `--continue` to `opencode run` to maintain conversation state across calls (useful for multi-turn council sessions).
 - **`--dangerously-skip-permissions`**: intentional on all delegated Claude calls — the delegated instance runs in a sandboxed context under the host agent's supervision.
+- **Slash commands are user-initiated**: OpenCode's model cannot self-invoke slash commands mid-reasoning. If autonomous model-initiated delegation is needed, an MCP server is required (not included; build separately if needed).
