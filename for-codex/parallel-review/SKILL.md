@@ -17,18 +17,18 @@ You review for **SCOPE AND SIMPLICITY**: unnecessary complexity, changes exceedi
 ## Invocation
 
 ```bash
-git diff HEAD > /tmp/chorus_diff.txt
+git diff HEAD > /tmp/llms-choreographer-diff.txt
 
-claude --print "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" --dangerously-skip-permissions &
+claude --print "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
-gemini --prompt "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" --yolo --output-format text &
+gemini --prompt "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --yolo --output-format text &
 GEMINI_PID=$!
 
-agent -p --force "Review for CODEBASE INTEGRATION. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" &
+agent -p --force "Review for CODEBASE INTEGRATION. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" &
 CURSOR_PID=$!
 
-kilo run --auto "Review for MAINTAINABILITY. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" &
+kilo run --auto "Review for MAINTAINABILITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" &
 KILO_PID=$!
 
 wait $CLAUDE_PID $GEMINI_PID $CURSOR_PID $KILO_PID
