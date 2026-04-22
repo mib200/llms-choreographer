@@ -5,11 +5,10 @@
 //   node bin/install.mjs --target=codex
 //   node bin/install.mjs --target=opencode
 
-import { cpSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
-import { homedir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = join(__dirname, '..');

@@ -1,17 +1,17 @@
-import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { parseClaudeStreamJson, parseOpenCodeOutput } from './parsers.mjs';
 import {
   REGISTRY, checkCli, requireAvailable, runAgent,
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
 
+export { filterAvailable, printMissingWarning } from './runners.mjs';
 export {
   REGISTRY, checkCli, requireAvailable, runAgent,
   printDelimited, printJSON, stripFlags,
   parseClaudeStreamJson, parseOpenCodeOutput,
 };
-export { filterAvailable, printMissingWarning } from './runners.mjs';
 
 // ── CLI entry point ───────────────────────────────────────────────────────────
 

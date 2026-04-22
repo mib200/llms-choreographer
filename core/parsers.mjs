@@ -15,10 +15,12 @@ export function parseClaudeStreamJson(raw) {
   return text.trim() || raw.trim();
 }
 
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[a-zA-Z]`, 'g');
+
 /** Strip ANSI escape codes and OpenCode progress lines, return clean text. */
 export function parseOpenCodeOutput(raw) {
   return raw
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(ANSI_RE, '')
     .split('\n')
     .filter(l => l.trim())
     .join('\n')
