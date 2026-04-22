@@ -1,132 +1,124 @@
-# Codebase Summary — LLMs Choreographer
+# Codebase Summary — Choreographer
 
 ## Overview
 
-Cross-agent plugin collection connecting AI coding CLIs in a full delegation mesh. Every agent can delegate to every other via plugins, skills, or slash commands.
+Monorepo with one shared core library bundled into three runtime-specific plugins (Claude Code, Codex, OpenCode) via esbuild. One marketplace name (`mib200`), one plugin name (`choreo`), one namespace (`/choreo:*` for Claude/Codex, `/choreo-*` for OpenCode).
 
-**Agents:** Claude Code, OpenCode, Codex
-
----
+**Agents:** Claude Code, Codex, OpenCode
 
 ## Directory Inventory
 
-### `plugins/` — Claude Code plugins (one per target agent)
+### `core/` — shared source (not shipped directly)
+
+| File | Purpose |
+|------|---------|
+| `companion.mjs` | CLI dispatcher (check-all, council, review, debug, second-opinion, vote) + re-exports from parsers + runners |
+| `parsers.mjs` | `parseClaudeStreamJson`, `parseOpenCodeOutput` |
+| `runners.mjs` | `REGISTRY`, `checkCli`, `filterAvailable`, `printMissingWarning`, `requireAvailable`, `runAgent`, `printDelimited`, `printJSON`, `stripFlags` |
+| `tests/` | 7 test files + `helpers/fake-agents.mjs` — 32 assertions |
+
+### `plugin-claude/` — Claude Code plugin
 
 | Path | Purpose |
 |------|---------|
-| `plugins/claude/` | Self-delegation (second Claude instance) |
-| `plugins/codex/` | Delegate to Codex from Claude Code |
-| `plugins/opencode/` | Delegate to OpenCode from Claude Code |
-| `plugins/llms-choreographer/` | Workflow patterns: council, review, debug, second-opinion, vote |
+| `.claude-plugin/plugin.json` | Plugin manifest — name: `choreo` |
+| `commands/*.md` | 8 slash commands: `/choreo:claude`, `/choreo:codex`, `/choreo:opencode`, `/choreo:council`, `/choreo:parallel-review`, `/choreo:parallel-debug`, `/choreo:second-opinion`, `/choreo:vote` |
+| `skills/choreo/SKILL.md` | Auto-trigger skill |
+| `src/entry.mjs` | esbuild entry — re-exports `core/companion.mjs` |
+| `scripts/companion.mjs` | **esbuild output** — what commands invoke |
 
-Each plugin dir contains:
-- `.claude-plugin/plugin.json` — plugin manifest
-- `commands/{run,setup,review}.md` — slash-command specs
-- `scripts/companion.mjs` — plugin-local helper
+### `plugin-codex/` — Codex plugin
 
-### `plugins/llms-choreographer/` — Core orchestrator plugin
+| Path | Purpose |
+|------|---------|
+| `.codex-plugin/plugin.json` | Plugin manifest — name: `choreo`, skills: `./skills` |
+| `skills/*/SKILL.md` | 9 skills: claude, codex, opencode, council, parallel-review, parallel-debug, second-opinion, vote, debug |
+| `src/entry.mjs` | esbuild entry |
+| `scripts/companion.mjs` | **esbuild output** |
+
+### `plugin-opencode/` — OpenCode plugin (npm-distributed)
+
+| Path | Purpose |
+|------|---------|
+| `package.json` | `@mib200/choreo-opencode` |
+| `.opencode/plugins/choreo.ts` | OpenCode plugin hook |
+| `.opencode/commands/choreo-*.md` | 8 slash commands: `/choreo-claude`, `/choreo-codex`, `/choreo-opencode`, `/choreo-council`, `/choreo-parallel-review`, `/choreo-parallel-debug`, `/choreo-second-opinion`, `/choreo-vote` |
+| `src/entry.mjs` | esbuild entry |
+| `dist/companion.mjs` | **esbuild output** — published to npm |
+
+### `scripts/` — build tooling
 
 | File | Purpose |
 |------|---------|
-| `scripts/companion.mjs` | Core parallel orchestrator. Exports: `REGISTRY`, `checkCli`, `filterAvailable`, `printMissingWarning`, `stripFlags`, `parseClaudeStreamJson`, `parseOpenCodeOutput`. Subcommands: `council`, `review`, `debug`, `second-opinion`, `vote` |
-| `commands/council.md` | Slash-command spec: run task across multiple agents, collate responses |
-| `commands/review.md` | Slash-command spec: parallel code review |
-| `commands/debug.md` | Slash-command spec: parallel debugging |
-| `commands/second-opinion.md` | Slash-command spec: single-agent second opinion (≥1 agent) |
-| `commands/vote.md` | Slash-command spec: majority-vote across agents |
-| `scripts/tests/` | Smoke tests (see Test Structure below) |
+| `bundle.mjs` | esbuild config — 3 targets, ESM, node22, external: `node:*` |
 
-### `.opencode/commands/` — OpenCode slash commands
-
-Zero per-turn token cost — loaded only when user types `/`.
+### `bin/` — installers
 
 | File | Purpose |
 |------|---------|
-| `delegate-claude.md` | Run `claude --print --output-format=stream-json --verbose \| jq` with given task, return assistant text |
-| `delegate-codex.md` | Run `codex exec` with given task, return output |
-| `check-agents.md` | Report ✓/✗ availability of claude and codex |
-| `council.md` | Claude (correctness) + Codex (scope) in parallel |
-| `parallel-review.md` | Review `git diff HEAD` with both agents |
-| `parallel-debug.md` | Root-cause hypotheses from both agents |
-| `second-opinion.md` | Quick approve/caveat/reject from Claude |
-| `vote.md` | YES/NO/ABSTAIN tally from both agents |
-| `_helpers/run-parallel.sh` | Spawn two CLIs in parallel, delimit output |
-| `_helpers/parse-vote.sh` | Extract YES/NO/ABSTAIN from agent stdout |
+| `install.sh` | Bash installer — `--target=claude\|codex\|opencode\|all` |
+| `install.mjs` | Node installer — same flags |
 
-### `for-codex/` — Codex skills
+### `.claude-plugin/marketplace.json`
 
-One `SKILL.md` per delegation target: `claude`, `codex`, `council`, `opencode`, `parallel-debug`, `parallel-review`, `second-opinion`, `vote`.
+Claude Code marketplace — `name: "mib200"`, one plugin: `choreo` → `./plugin-claude`.
 
-Claude invocations use `--output-format=stream-json --verbose | jq` to extract assistant text (plain `--print` returns empty `result` on Bedrock). OpenCode invocations use plain `opencode run` (no `--format json` — opencode emits plain text, not ndJSON).
+### `.agents/plugins/marketplace.json`
 
-### `.claude-plugin/`
+Codex marketplace — `name: "mib200"`, one plugin: `choreo` → `./plugin-codex`.
 
-| File | Purpose |
-|------|---------|
-| `marketplace.json` | Claude Code plugin registry |
+## Key Exports (`core/runners.mjs`)
 
----
-
-## Agent Registry
-
-```js
-const REGISTRY = {
-  claude:    { binary: 'claude',    setup: '/claude:setup' },
-  codex:     { binary: 'codex',     setup: '/codex:setup'  },
-  opencode:  { binary: 'opencode',  setup: '/opencode:setup' },
-};
-```
-
-`checkCli(binary)` returns `{ status: 'ok' | 'not-installed' | 'unavailable', version: string }`.
-
----
+| Export | Description |
+|--------|-------------|
+| `REGISTRY` | `{ claude, codex, opencode }` — binary names + `/choreo:*` setup hints |
+| `checkCli(binary)` | Returns `{ status: 'ok'\|'not-installed'\|'unavailable', version }` |
+| `filterAvailable(agents)` | Splits agents into `{ available, missing }` |
+| `requireAvailable(agents, min)` | Asserts min count; exits with install hint on failure |
+| `runAgent(name, binary, args, parse)` | Spawns agent subprocess, returns `{ name, output, error, code }` |
+| `printDelimited(results)` | Human-readable bordered output per agent |
+| `printJSON(command, results)` | JSON output `{ command, results[] }` |
+| `stripFlags(args)` | Strips `--json`, `--background`, `--wait`, `--agent[=]` |
 
 ## Test Structure
 
-### Companion tests (`plugins/llms-choreographer/scripts/tests/`)
+```
+core/tests/
+├── helpers/fake-agents.mjs           # createFakeAgents(), runCompanion()
+├── check-all.test.mjs                # checkCli / filterAvailable
+├── json-output.test.mjs              # JSON output formatting
+├── min-agents.test.mjs               # minimum agent count enforcement
+├── parse-opencode.test.mjs           # parseOpenCodeOutput (ANSI stripping)
+├── second-opinion-fallback.test.mjs  # fallback when agent unavailable
+├── strip-flags.test.mjs              # stripFlags helper
+└── vote.test.mjs                     # vote subcommand logic
+```
 
-| File | Covers |
-|------|--------|
-| `check-all.test.mjs` | `checkCli` / `filterAvailable` |
-| `json-output.test.mjs` | JSONL output formatting |
-| `min-agents.test.mjs` | Minimum agent count enforcement |
-| `parse-opencode.test.mjs` | `parseOpenCodeOutput` (ANSI stripping, plain-text parsing) |
-| `second-opinion-fallback.test.mjs` | Fallback behavior when only 1 agent available |
-| `strip-flags.test.mjs` | `stripFlags` helper |
-| `vote.test.mjs` | Vote subcommand logic |
-| `helpers/fake-agents.mjs` | Shared test fixture |
-
-**Total: 7 test files, 32 assertions. Run with:** `npm test`
-
----
+**32 assertions. Run with:** `npm test`
 
 ## Dependencies
 
-- **Runtime:** Node.js ≥ 22 (no external npm deps in companion.mjs)
-- **Test runner:** `node --test` (Node.js built-in)
+| Package | Purpose |
+|---------|---------|
+| `esbuild` (devDep) | Bundles `core/` into each plugin's `companion.mjs` |
 
----
+No runtime npm dependencies — uses only `node:child_process`, `node:fs`, `node:url`, `node:os`, `node:path`.
 
 ## How to Run
 
 ```bash
-# Workflow pattern commands via companion.mjs
-node plugins/llms-choreographer/scripts/companion.mjs check-all
-node plugins/llms-choreographer/scripts/companion.mjs council "<task>"
-node plugins/llms-choreographer/scripts/companion.mjs review
-node plugins/llms-choreographer/scripts/companion.mjs debug "<symptom>"
-node plugins/llms-choreographer/scripts/companion.mjs second-opinion [--agent <name>] "<approach>"
-node plugins/llms-choreographer/scripts/companion.mjs vote "<question>"
+npm install          # install esbuild devDep
+npm run bundle       # rebuild all 3 companion.mjs outputs
+npm test             # run 32 core tests
 
-# Run tests
-npm test
+node core/companion.mjs check-all
+node core/companion.mjs council "your task here"
+node core/companion.mjs vote "proposition"
 ```
-
----
 
 ## Known Limitations
 
-- **Codex sandbox:** file access limited to working directory
-- **OpenCode slash commands are user-initiated:** the OpenCode model cannot self-invoke them mid-reasoning
-- `council`, `review`, `debug`, `vote` require ≥2 available agents (exit non-zero otherwise)
-- `second-opinion` requires ≥1 agent
+- Single-agent delegation commands (`/choreo:claude` etc.) currently route through `council` (all available agents). No single-agent dispatch mode yet.
+- OpenCode output is plain text + ANSI, stripped by `parseOpenCodeOutput`.
+- Claude subprocess requires `--output-format=stream-json --verbose` on Bedrock.
+- No git remote configured — install is local only until remote is added.
