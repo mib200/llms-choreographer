@@ -9,7 +9,7 @@ export function parseClaudeStreamJson(raw) {
         return (d.message?.content ?? [])
           .filter(c => c.type === 'text')
           .map(c => c.text);
-      } catch { return []; }
+      } catch (e) { process.stderr.write(`[choreo:parse-warn] ${e.message}\n`); return []; }
     })
     .join('');
   return text.trim() || raw.trim();

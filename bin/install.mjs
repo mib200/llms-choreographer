@@ -5,7 +5,7 @@
 //   node bin/install.mjs --target=codex
 //   node bin/install.mjs --target=opencode
 
-import { cpSync, mkdirSync, readdirSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -56,18 +56,30 @@ function installCodex() {
 
 function installOpenCode() {
   const cmdDir = join(homedir(), '.config', 'opencode', 'commands');
-  console.log(`Installing OpenCode commands → ${cmdDir}`);
-  mkdirSync(cmdDir, { recursive: true });
-
+  const distDir = join(homedir(), '.config', 'opencode', 'choreo');
   const srcCmds = join(REPO_DIR, 'plugin-opencode', '.opencode', 'commands');
-  for (const f of readdirSync(srcCmds).filter(n => n.startsWith('choreo-') && n.endsWith('.md'))) {
-    cpSync(join(srcCmds, f), join(cmdDir, f));
+  const srcBundle = join(REPO_DIR, 'plugin-opencode', 'dist', 'companion.mjs');
+
+  if (!existsSync(srcBundle)) {
+    console.error(`✗ dist/companion.mjs not found. Run "npm run bundle" before installing.`);
+    process.exit(1);
   }
 
-  // Copy bundled companion so commands can resolve it
-  const distDir = join(homedir(), '.config', 'opencode', 'choreo');
+  console.log(`Installing OpenCode commands → ${cmdDir}`);
+  mkdirSync(cmdDir, { recursive: true });
   mkdirSync(distDir, { recursive: true });
-  cpSync(join(REPO_DIR, 'plugin-opencode', 'dist', 'companion.mjs'), join(distDir, 'companion.mjs'));
+
+  try {
+    for (const f of readdirSync(srcCmds).filter(n => n.startsWith('choreo-') && n.endsWith('.md'))) {
+      cpSync(join(srcCmds, f), join(cmdDir, f));
+    }
+    cpSync(srcBundle, join(distDir, 'companion.mjs'));
+  } catch (e) {
+    console.error(`✗ OpenCode install failed: ${e.message}`);
+    console.error(`  Cleaning up partial install...`);
+    rmSync(distDir, { recursive: true, force: true });
+    process.exit(1);
+  }
 
   console.log('✓ OpenCode commands installed. Restart OpenCode — /choreo-* commands will appear.');
 }

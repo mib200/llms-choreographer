@@ -6,9 +6,12 @@ export const REGISTRY = {
   opencode: { binary: 'opencode', setup: '/choreo:opencode' },
 };
 
+const CLI_CHECK_TIMEOUT_MS = 5_000;
+const AGENT_TIMEOUT_MS = 5 * 60_000;
+
 /** Returns { status: 'ok' | 'not-installed' | 'unavailable', version: string }. */
 export function checkCli(binary) {
-  const r = spawnSync(binary, ['--version'], { encoding: 'utf8' });
+  const r = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: CLI_CHECK_TIMEOUT_MS });
   if (r.error?.code === 'ENOENT') return { status: 'not-installed', version: '' };
   if (r.error || r.status !== 0) return { status: 'unavailable', version: '' };
   return { status: 'ok', version: r.stdout.trim() };
@@ -56,15 +59,24 @@ export function runAgent(name, binary, args, parse = s => s) {
     const out = [];
     const err = [];
     const proc = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const timer = setTimeout(() => {
+      proc.kill('SIGTERM');
+      resolve({ name, output: '', error: `agent timed out after ${AGENT_TIMEOUT_MS / 1000}s`, code: 1 });
+    }, AGENT_TIMEOUT_MS);
+
     proc.stdout.on('data', d => out.push(d));
     proc.stderr.on('data', d => err.push(d));
-    proc.on('close', (code, signal) => resolve({
-      name,
-      output: parse(Buffer.concat(out).toString()).trim(),
-      error:  Buffer.concat(err).toString().trim(),
-      code:   code ?? (signal ? 1 : 0)
-    }));
-    proc.on('error', e => resolve({ name, output: '', error: e.message, code: 1 }));
+    proc.on('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve({
+        name,
+        output: parse(Buffer.concat(out).toString()).trim(),
+        error:  Buffer.concat(err).toString().trim(),
+        code:   code ?? (signal ? 1 : 0)
+      });
+    });
+    proc.on('error', e => { clearTimeout(timer); resolve({ name, output: '', error: e.message, code: 1 }); });
   });
 }
 
@@ -90,16 +102,15 @@ export function printJSON(command, results) {
   }));
 }
 
-/** Check availability, warn about missing, abort if fewer than `min` available. */
+/** Check availability, warn about missing, throw if fewer than `min` available. */
 export function requireAvailable(agents, min = 2) {
   const { available, missing } = filterAvailable(agents);
   printMissingWarning(missing);
   if (available.length < min) {
-    console.error(
-      `\n✗ Not enough agents available (need at least ${min}, got ${available.length}).` +
-      (missing.length ? `\n  Install the missing agents listed above.` : '')
+    throw new Error(
+      `Not enough agents available (need at least ${min}, got ${available.length}).` +
+      (missing.length ? ` Install the missing agents listed above.` : '')
     );
-    process.exit(1);
   }
   return available;
 }

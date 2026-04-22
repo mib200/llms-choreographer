@@ -18,6 +18,11 @@ export { filterAvailable, printMissingWarning } from './runners.mjs';
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
   const [,, cmd, ...rest] = process.argv;
 
+  process.on('unhandledRejection', (err) => {
+    console.error(err?.message ?? err);
+    process.exit(1);
+  });
+
   // ── check-all ───────────────────────────────────────────────────────────────
 
   if (cmd === 'check-all') {
@@ -72,7 +77,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
     ];
 
-    const available = requireAvailable(agents, 2);
+    let available;
+    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
     const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('council', results) : printDelimited(results);
   }
@@ -81,7 +87,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
   if (cmd === 'review') {
     const jsonMode = rest.includes('--json');
-    const gitResult = spawnSync('git', ['diff', 'HEAD'], { encoding: 'utf8' });
+    const gitResult = spawnSync('git', ['diff', 'HEAD'], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (gitResult.error || gitResult.status !== 0) {
       const msg = gitResult.stderr?.trim() || gitResult.error?.message || `exit ${gitResult.status}`;
       console.error(`Failed to get git diff: ${msg}`);
@@ -117,7 +123,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
     ];
 
-    const available = requireAvailable(agents, 2);
+    let available;
+    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
     const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('review', results) : printDelimited(results);
   }
@@ -147,7 +154,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         parse: parseOpenCodeOutput }
     ];
 
-    const available = requireAvailable(agents, 2);
+    let available;
+    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
     const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('debug', results) : printDelimited(results);
   }
@@ -238,7 +246,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         parse: parseOpenCodeOutput }
     ];
 
-    const available = requireAvailable(agents, 2);
+    let available;
+    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
     const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
 
     function parseVote(text) {
@@ -256,6 +265,13 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       tally[vote.toLowerCase()]++;
       return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
     });
+
+    if (tally.invalid === parsed.length) {
+      const msg = 'All agent votes were INVALID — no valid tally produced.';
+      if (jsonMode) { console.log(JSON.stringify({ command: 'vote', error: msg, tally, results: parsed })); }
+      else { console.error(msg); }
+      process.exit(1);
+    }
 
     if (jsonMode) {
       console.log(JSON.stringify({ command: 'vote', tally, results: parsed }));
