@@ -32,6 +32,11 @@ install_claude() {
   for plugin in claude codex opencode llms-choreographer; do
     claude plugin install "${plugin}@llms-choreographer" 2>&1 | sed 's/^/    /' || \
       warn "  install failed: ${plugin}"
+    # Force-sync source into cache so edits take effect without a version bump
+    local cache_dir="$HOME/.claude/plugins/cache/llms-choreographer/${plugin}/1.0.0"
+    if [[ -d "$cache_dir" ]]; then
+      cp -r "$REPO_ROOT/plugins/${plugin}/." "$cache_dir/"
+    fi
   done
   ok "Claude Code plugins installed — run '/plugin' in a Claude session to verify"
 }
@@ -49,6 +54,16 @@ install_codex() {
     ln -s "$skill_dir" "$target"
     printf '    ~/.codex/skills/%s → %s\n' "$name" "$skill_dir"
   done
+  # Link shared helper dir (_shared) so skills can access claude-print-args.sh
+  local shared_src="$REPO_ROOT/for-codex/_shared"
+  local shared_dst="$HOME/.codex/skills/_shared"
+  if [[ -d "$shared_src" ]]; then
+    if [[ -L "$shared_dst" || -e "$shared_dst" ]]; then
+      rm -rf "$shared_dst"
+    fi
+    ln -s "$shared_src" "$shared_dst"
+    printf '    ~/.codex/skills/_shared → %s\n' "$shared_src"
+  fi
   ok "Codex skills linked — launch 'codex' from any dir to use them"
 }
 

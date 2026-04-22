@@ -21,10 +21,11 @@ You are the **SCOPE voter**. Your vote should reflect whether the proposition is
 Spawn two agents in parallel, then cast your own vote:
 
 ```bash
-claude --print "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions &
+claude --print --output-format=stream-json --verbose "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text' &
 CLAUDE_PID=$!
 
-opencode run "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --format json --dangerously-skip-permissions &
+opencode run "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions &
 OPENCODE_PID=$!
 
 wait $CLAUDE_PID $OPENCODE_PID
@@ -32,7 +33,7 @@ wait $CLAUDE_PID $OPENCODE_PID
 
 **Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
 
-**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Casting your vote
 

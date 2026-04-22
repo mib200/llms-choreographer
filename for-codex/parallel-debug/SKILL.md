@@ -19,10 +19,11 @@ You generate hypotheses focused on **edge cases in input handling, type coercion
 ```bash
 SYMPTOM="<symptom>"
 
-claude --print "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
+claude --print --output-format=stream-json --verbose "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text' &
 CLAUDE_PID=$!
 
-opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --format json --dangerously-skip-permissions &
+opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
 OPENCODE_PID=$!
 
 wait $CLAUDE_PID $OPENCODE_PID
@@ -30,7 +31,7 @@ wait $CLAUDE_PID $OPENCODE_PID
 
 **Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
 
-**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 

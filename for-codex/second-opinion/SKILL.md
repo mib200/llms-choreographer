@@ -14,15 +14,17 @@ description: Quick independent second opinion from Claude or OpenCode on a decis
 
 ```bash
 # Ask Claude (default — depth, correctness, edge cases)
-claude --print "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
+claude --print --output-format=stream-json --verbose "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text'
 
 # Or ask OpenCode (integration — does this fit the codebase?)
-opencode run "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --format json --dangerously-skip-permissions
+opencode run "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
 ```
 
 **Graceful degradation:** If the requested agent is not installed (`command -v <binary>` fails), fall back to the next available one and tell the user which agent you used instead.
 
-**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
+**Claude output:** jq extracts assistant text from stream-json events.
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 

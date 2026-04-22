@@ -27,10 +27,11 @@ You are the **SCOPE reviewer**. Focus on: unnecessary complexity, premature abst
 Spawn both agents in parallel, then add your own scope review:
 
 ```bash
-claude --print "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
+claude --print --output-format=stream-json --verbose "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text' &
 CLAUDE_PID=$!
 
-opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --format json --dangerously-skip-permissions &
+opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
 OPENCODE_PID=$!
 
 wait $CLAUDE_PID $OPENCODE_PID
@@ -38,7 +39,7 @@ wait $CLAUDE_PID $OPENCODE_PID
 
 **Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
 
-**OpenCode output:** pipe stdout through an ndJSON parser — extract `type === "assistant"` events and concatenate `message.content[].text` blocks.
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 

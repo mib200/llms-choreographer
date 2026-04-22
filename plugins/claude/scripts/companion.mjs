@@ -1,6 +1,24 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const [,, cmd, ...rest] = process.argv;
+
+// Returns ['--plugin-dir', '<path>', ...] for all installed @llms-choreographer plugins.
+// Reads ~/.claude/plugins/installed_plugins.json. Returns [] on any error.
+function pluginDirArgs() {
+  try {
+    const registry = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
+    const data = JSON.parse(readFileSync(registry, 'utf8'));
+    const plugins = data.plugins ?? {};
+    return Object.entries(plugins)
+      .filter(([k]) => k.endsWith('@llms-choreographer'))
+      .flatMap(([, v]) => v.map(e => e.installPath).filter(Boolean).flatMap(p => ['--plugin-dir', p]));
+  } catch {
+    return [];
+  }
+}
 
 // Helper to check if claude is available
 function checkClaude() {
@@ -43,7 +61,7 @@ if (cmd === 'run') {
     console.error('Error: No task provided');
     process.exit(1);
   }
-  const proc = spawn('claude', ['--print', task, '--dangerously-skip-permissions'], { stdio: 'inherit' });
+  const proc = spawn('claude', ['--print', ...pluginDirArgs(), task, '--dangerously-skip-permissions'], { stdio: 'inherit' });
   proc.on('exit', code => process.exit(code ?? 0));
 }
 
@@ -57,7 +75,7 @@ if (cmd === 'review') {
 
 ${gitDiff.stdout || 'No diff available'}`;
 
-  const proc = spawn('claude', ['--print', reviewPrompt, '--dangerously-skip-permissions'], { stdio: 'inherit' });
+  const proc = spawn('claude', ['--print', ...pluginDirArgs(), reviewPrompt, '--dangerously-skip-permissions'], { stdio: 'inherit' });
   proc.on('exit', code => process.exit(code ?? 0));
 }
 

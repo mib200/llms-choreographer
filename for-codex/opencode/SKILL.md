@@ -19,10 +19,10 @@ This skill delegates tasks to OpenCode when the user asks for a second opinion o
 Run OpenCode non-interactively and capture the response:
 
 ```bash
-opencode run "<task>" --format json --dangerously-skip-permissions
+opencode run "<task>" --dangerously-skip-permissions
 ```
 
-`--format json` emits ndJSON events on stdout. Extract the final assistant message from events where `type === "assistant"` and `message.content[].type === "text"`.
+OpenCode emits plain text (with ANSI escape codes). Strip ANSI codes and return the text verbatim.
 
 Set `OPENCODE_SERVER_URL=http://localhost:4096` before running to reuse a warm `opencode serve` instance instead of cold-starting a new one.
 

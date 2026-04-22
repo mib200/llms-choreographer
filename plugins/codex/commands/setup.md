@@ -9,7 +9,7 @@ Check if Codex CLI is installed and working properly.
 
 Run:
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" check
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" check
 ```
 
 If successful, report: "Codex is ready to use."

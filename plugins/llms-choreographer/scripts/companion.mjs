@@ -56,21 +56,31 @@ export function stripFlags(args) {
   return result;
 }
 
-/** Parse OpenCode --format json ndJSON stream, extract final assistant text. */
-export function parseOpenCodeNdJson(raw) {
-  const lines = raw.split('\n').filter(l => l.trim());
-  const messages = [];
-  for (const line of lines) {
-    try {
-      const obj = JSON.parse(line);
-      if (obj.type === 'assistant' && obj.message?.content) {
-        for (const block of obj.message.content) {
-          if (block.type === 'text') messages.push(block.text);
-        }
-      }
-    } catch { /* non-JSON progress lines */ }
-  }
-  return messages.length > 0 ? messages.join('\n').trim() : raw.trim();
+/** Parse claude --output-format stream-json --verbose output, extract assistant text. */
+export function parseClaudeStreamJson(raw) {
+  const text = raw.split('\n')
+    .filter(l => l.trim())
+    .flatMap(l => {
+      try {
+        const d = JSON.parse(l);
+        if (d.type !== 'assistant') return [];
+        return (d.message?.content ?? [])
+          .filter(c => c.type === 'text')
+          .map(c => c.text);
+      } catch { return []; }
+    })
+    .join('');
+  return text.trim() || raw.trim();
+}
+
+/** Strip ANSI escape codes and OpenCode progress lines, return clean text. */
+export function parseOpenCodeOutput(raw) {
+  return raw
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .split('\n')
+    .filter(l => l.trim())
+    .join('\n')
+    .trim() || raw.trim();
 }
 
 export function runAgent(name, binary, args, parse = s => s) {
@@ -161,11 +171,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       {
         name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print',
+        args: ['--print', '--output-format', 'stream-json', '--verbose',
           `You are the CORRECTNESS reviewer in an LLM council.\n` +
           `Focus on: logic errors, type safety, off-by-one bugs, unhandled edge cases, security issues.\n` +
           `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--dangerously-skip-permissions']
+          '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson
       },
       {
         name: 'codex', binary: REGISTRY.codex.binary,
@@ -180,8 +191,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           `You are the INTEGRATION reviewer in an LLM council.\n` +
           `Focus on: how this fits with existing codebase patterns, dependency implications, integration risks.\n` +
           `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--format', 'json', '--dangerously-skip-permissions'],
-        parse: parseOpenCodeNdJson
+          '--dangerously-skip-permissions'],
+        parse: parseOpenCodeOutput
       }
     ];
 
@@ -205,11 +216,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       {
         name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print',
+        args: ['--print', '--output-format', 'stream-json', '--verbose',
           `Review the following code changes for CORRECTNESS AND SECURITY.\n` +
           `Focus on: bugs, logic errors, security vulnerabilities, unsafe patterns.\n` +
           `Be concise — numbered findings.\n\n${diff}`,
-          '--dangerously-skip-permissions']
+          '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson
       },
       {
         name: 'codex', binary: REGISTRY.codex.binary,
@@ -224,8 +236,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           `Review the following code changes for EDGE CASES AND ROBUSTNESS.\n` +
           `Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.\n` +
           `Be concise — numbered findings.\n\n${diff}`,
-          '--format', 'json', '--dangerously-skip-permissions'],
-        parse: parseOpenCodeNdJson
+          '--dangerously-skip-permissions'],
+        parse: parseOpenCodeOutput
       }
     ];
 
@@ -249,13 +261,14 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'] },
+        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt('edge cases in input handling, off-by-one errors, type coercion')] },
       { name: 'opencode', binary: REGISTRY.opencode.binary,
         args: ['run', prompt('infrastructure, concurrency, external dependencies, environment'),
-          '--format', 'json', '--dangerously-skip-permissions'],
-        parse: parseOpenCodeNdJson }
+          '--dangerously-skip-permissions'],
+        parse: parseOpenCodeOutput }
     ];
 
     const available = requireAvailable(agents, 2);
@@ -285,9 +298,9 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `${task}`;
 
     const agentDefs = {
-      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', prompt, '--dangerously-skip-permissions']) },
+      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'], parseClaudeStreamJson) },
       codex:    { binary: REGISTRY.codex.binary,    run: () => runAgent('codex',    REGISTRY.codex.binary,    ['exec', prompt]) },
-      opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent('opencode', REGISTRY.opencode.binary, ['run', prompt, '--format', 'json', '--dangerously-skip-permissions'], parseOpenCodeNdJson) },
+      opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent('opencode', REGISTRY.opencode.binary, ['run', prompt, '--dangerously-skip-permissions'], parseOpenCodeOutput) },
     };
 
     if (requestedAgent && !agentDefs[requestedAgent]) {
@@ -340,12 +353,13 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', prompt, '--dangerously-skip-permissions'] },
+        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt] },
       { name: 'opencode', binary: REGISTRY.opencode.binary,
-        args: ['run', prompt, '--format', 'json', '--dangerously-skip-permissions'],
-        parse: parseOpenCodeNdJson }
+        args: ['run', prompt, '--dangerously-skip-permissions'],
+        parse: parseOpenCodeOutput }
     ];
 
     const available = requireAvailable(agents, 2);

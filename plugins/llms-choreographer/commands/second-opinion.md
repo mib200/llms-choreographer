@@ -30,13 +30,13 @@ The companion checks whether the chosen agent is installed and falls back to the
 
 **Foreground execution:**
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" second-opinion $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" second-opinion $ARGUMENTS
 ```
 
 **Background execution:**
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" second-opinion $ARGUMENTS`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" second-opinion $ARGUMENTS`,
   description: "Second opinion",
   run_in_background: true
 })

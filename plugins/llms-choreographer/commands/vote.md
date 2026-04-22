@@ -35,13 +35,13 @@ The companion automatically checks which agents are installed. Missing agents ar
 
 **Foreground execution:**
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" vote $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" vote $ARGUMENTS
 ```
 
 **Background execution:**
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" vote $ARGUMENTS`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" vote $ARGUMENTS`,
   description: "Parallel vote",
   run_in_background: true
 })

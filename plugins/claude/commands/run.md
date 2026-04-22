@@ -17,7 +17,7 @@ Execution mode rules:
 - Strip `--background` and `--wait` before passing the task to Claude.
 
 Pre-flight check:
-- Run: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" check`
+- Run: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" check`
 - If it exits non-zero, stop and tell the user to run `/claude:setup`.
 
 Execution:
@@ -25,7 +25,7 @@ Execution:
 Foreground mode:
 - Run:
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" run "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" run "$ARGUMENTS"
 ```
 - Return the stdout verbatim, exactly as-is.
 - Do not paraphrase, summarize, or add commentary.
@@ -34,7 +34,7 @@ Background mode:
 - Launch with `Bash` in the background:
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" run "$ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" run "$ARGUMENTS"`,
   description: "Claude task",
   run_in_background: true
 })
