@@ -1,6 +1,6 @@
 // core/companion.mjs
-import { fileURLToPath } from "node:url";
 import { spawnSync as spawnSync2 } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 // core/parsers.mjs
 function parseClaudeStreamJson(raw) {
@@ -9,14 +9,17 @@ function parseClaudeStreamJson(raw) {
       const d = JSON.parse(l);
       if (d.type !== "assistant") return [];
       return (d.message?.content ?? []).filter((c) => c.type === "text").map((c) => c.text);
-    } catch {
+    } catch (e) {
+      process.stderr.write(`[choreo:parse-warn] ${e.message}
+`);
       return [];
     }
   }).join("");
   return text.trim() || raw.trim();
 }
+var ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[a-zA-Z]`, "g");
 function parseOpenCodeOutput(raw) {
-  return raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").split("\n").filter((l) => l.trim()).join("\n").trim() || raw.trim();
+  return raw.replace(ANSI_RE, "").split("\n").filter((l) => l.trim()).join("\n").trim() || raw.trim();
 }
 
 // core/runners.mjs
@@ -26,8 +29,10 @@ var REGISTRY = {
   codex: { binary: "codex", setup: "/choreo:codex" },
   opencode: { binary: "opencode", setup: "/choreo:opencode" }
 };
+var CLI_CHECK_TIMEOUT_MS = 5e3;
+var AGENT_TIMEOUT_MS = 5 * 6e4;
 function checkCli(binary) {
-  const r = spawnSync(binary, ["--version"], { encoding: "utf8" });
+  const r = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: CLI_CHECK_TIMEOUT_MS });
   if (r.error?.code === "ENOENT") return { status: "not-installed", version: "" };
   if (r.error || r.status !== 0) return { status: "unavailable", version: "" };
   return { status: "ok", version: r.stdout.trim() };
@@ -76,15 +81,25 @@ function runAgent(name, binary, args, parse = (s) => s) {
     const out = [];
     const err = [];
     const proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const timer = setTimeout(() => {
+      proc.kill("SIGTERM");
+      resolve({ name, output: "", error: `agent timed out after ${AGENT_TIMEOUT_MS / 1e3}s`, code: 1 });
+    }, AGENT_TIMEOUT_MS);
     proc.stdout.on("data", (d) => out.push(d));
     proc.stderr.on("data", (d) => err.push(d));
-    proc.on("close", (code, signal) => resolve({
-      name,
-      output: parse(Buffer.concat(out).toString()).trim(),
-      error: Buffer.concat(err).toString().trim(),
-      code: code ?? (signal ? 1 : 0)
-    }));
-    proc.on("error", (e) => resolve({ name, output: "", error: e.message, code: 1 }));
+    proc.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({
+        name,
+        output: parse(Buffer.concat(out).toString()).trim(),
+        error: Buffer.concat(err).toString().trim(),
+        code: code ?? (signal ? 1 : 0)
+      });
+    });
+    proc.on("error", (e) => {
+      clearTimeout(timer);
+      resolve({ name, output: "", error: e.message, code: 1 });
+    });
   });
 }
 function printDelimited(results) {
@@ -113,12 +128,9 @@ function requireAvailable(agents, min = 2) {
   const { available, missing } = filterAvailable(agents);
   printMissingWarning(missing);
   if (available.length < min) {
-    console.error(
-      `
-\u2717 Not enough agents available (need at least ${min}, got ${available.length}).` + (missing.length ? `
-  Install the missing agents listed above.` : "")
+    throw new Error(
+      `Not enough agents available (need at least ${min}, got ${available.length}).` + (missing.length ? ` Install the missing agents listed above.` : "")
     );
-    process.exit(1);
   }
   return available;
 }
@@ -126,6 +138,10 @@ function requireAvailable(agents, min = 2) {
 // core/companion.mjs
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
   const [, , cmd, ...rest] = process.argv;
+  process.on("unhandledRejection", (err) => {
+    console.error(err?.message ?? err);
+    process.exit(1);
+  });
   if (cmd === "check-all") {
     let ok = true;
     for (const [name, { binary, setup }] of Object.entries(REGISTRY)) {
@@ -194,13 +210,19 @@ Task: ${task}`,
         parse: parseOpenCodeOutput
       }
     ];
-    const available = requireAvailable(agents, 2);
+    let available;
+    try {
+      available = requireAvailable(agents, 2);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON("council", results) : printDelimited(results);
   }
   if (cmd === "review") {
     const jsonMode = rest.includes("--json");
-    const gitResult = spawnSync2("git", ["diff", "HEAD"], { encoding: "utf8" });
+    const gitResult = spawnSync2("git", ["diff", "HEAD"], { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
     if (gitResult.error || gitResult.status !== 0) {
       const msg = gitResult.stderr?.trim() || gitResult.error?.message || `exit ${gitResult.status}`;
       console.error(`Failed to get git diff: ${msg}`);
@@ -252,7 +274,13 @@ ${diff}`,
         parse: parseOpenCodeOutput
       }
     ];
-    const available = requireAvailable(agents, 2);
+    let available;
+    try {
+      available = requireAvailable(agents, 2);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON("review", results) : printDelimited(results);
   }
@@ -291,7 +319,13 @@ Symptom: ${symptom}`;
         parse: parseOpenCodeOutput
       }
     ];
-    const available = requireAvailable(agents, 2);
+    let available;
+    try {
+      available = requireAvailable(agents, 2);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON("debug", results) : printDelimited(results);
   }
@@ -384,7 +418,13 @@ Proposition: ${task}`;
         parse: parseOpenCodeOutput
       }
     ];
-    const available = requireAvailable(agents, 2);
+    let available;
+    try {
+      available = requireAvailable(agents, 2);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
     const tally = { yes: 0, no: 0, abstain: 0, invalid: 0 };
     const parsed = results.map((r) => {
@@ -392,6 +432,15 @@ Proposition: ${task}`;
       tally[vote.toLowerCase()]++;
       return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
     });
+    if (tally.invalid === parsed.length) {
+      const msg = "All agent votes were INVALID \u2014 no valid tally produced.";
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: "vote", error: msg, tally, results: parsed }));
+      } else {
+        console.error(msg);
+      }
+      process.exit(1);
+    }
     if (jsonMode) {
       console.log(JSON.stringify({ command: "vote", tally, results: parsed }));
     } else {
