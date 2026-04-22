@@ -1,6 +1,0 @@
-{
-  "name": "chorus",
-  "version": "1.0.0",
-  "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion.",
-  "author": { "name": "valpere" }
-}

@@ -1,0 +1,6 @@
+{
+  "name": "llms-choreographer",
+  "version": "1.0.0",
+  "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion.",
+  "author": { "name": "Manish Kumar" }
+}

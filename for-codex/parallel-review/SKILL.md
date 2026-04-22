@@ -1,14 +1,14 @@
 ---
-name: chorus-parallel-review
-description: Parallel code review of the current git diff from multiple agents — Claude (correctness/security), Gemini (edge cases), Cursor (integration), Kilo (maintainability), and you (scope/simplicity). Use when the user says "parallel review", "review with all agents", or "chorus review".
+name: llms-choreographer-parallel-review
+description: Parallel code review of the current git diff from multiple agents — Claude (correctness/security), Gemini (edge cases), Cursor (integration), Kilo (maintainability), and you (scope/simplicity). Use when the user says "parallel review", "review with all agents", or "llms-choreographer review".
 ---
 
-# Chorus: Parallel Code Review
+# LLMs Choreographer: Parallel Code Review
 
 ## When to use
 
 - User wants code reviewed from multiple angles simultaneously
-- User says "parallel review", "all agents review", "chorus review"
+- User says "parallel review", "all agents review", "llms-choreographer review"
 
 ## Your role
 

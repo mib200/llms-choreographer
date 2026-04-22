@@ -77,7 +77,7 @@ const TOOLS = [
   },
   {
     name: 'check_agents',
-    description: 'Report availability of all 5 target CLIs (claude, gemini, codex, cursor, kilo) — mirrors /chorus check-all',
+    description: 'Report availability of all 5 target CLIs (claude, gemini, codex, cursor, kilo) — mirrors /llms-choreographer check-all',
     inputSchema: {
       type: 'object',
       properties: {}
@@ -614,7 +614,7 @@ async function runVote(proposition) {
 
 const server = new Server(
   {
-    name: 'chorus-opencode',
+    name: 'llms-choreographer-opencode',
     version: '1.1.0'
   },
   {
@@ -709,7 +709,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Chorus MCP server running on stdio');
+  console.error('LLMs Choreographer MCP server running on stdio');
 }
 
 main().catch((error) => {

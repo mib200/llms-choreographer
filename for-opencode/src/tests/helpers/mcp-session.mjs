@@ -108,7 +108,7 @@ export async function createMcpSession({ path: fakePath }) {
   await send('initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: { name: 'chorus-test', version: '0.0.0' },
+    clientInfo: { name: 'llms-choreographer-test', version: '0.0.0' },
   });
   notify('notifications/initialized');
 
