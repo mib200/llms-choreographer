@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "node --test 'core/tests/*.test.mjs'",
-    "bundle": "node scripts/bundle.mjs"
+    "bundle": "node scripts/bundle.mjs",
+    "check-bundles": "node scripts/check-bundles.mjs"
   },
   "volta": {
     "node": "24.15.0"
