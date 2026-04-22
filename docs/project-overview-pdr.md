@@ -54,12 +54,7 @@ The companion orchestrator (`companion.mjs`) maintains a registry of five agent 
 | Key    | Binary  | Notes                                  |
 |--------|---------|----------------------------------------|
 | claude | claude  | Non-interactive via `--print`          |
-| gemini | gemini  | Registry kept for forward compatibility |
 | codex  | codex   | `codex exec`                           |
-| cursor | agent   | Registry kept for forward compatibility |
-| kilo   | kilo    | `kilo run --auto`                      |
-
-Gemini CLI and Cursor Agent CLI entries are retained in the registry for forward compatibility but are not shipped as active plugins in this version.
 
 ---
 
@@ -97,4 +92,3 @@ Gemini CLI and Cursor Agent CLI entries are retained in the registry for forward
 - **OpenCode is output-only via MCP.** Its TUI stdout is not capturable, so it is excluded from parallel workflow patterns that require captured output. It receives tasks via the MCP server.
 - **No model selection.** Each agent uses whatever model it is configured for externally. Choreographer only routes tasks and collects text output.
 - **No persistent state.** Workflow results are ephemeral — returned to the host CLI session, not stored.
-- **Gemini CLI and Cursor Agent CLI** are not active plugins in v1.0.0. Their registry entries exist for forward compatibility only.
