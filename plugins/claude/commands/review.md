@@ -22,7 +22,7 @@ Execution mode rules:
 - Strip `--background` and `--wait` before passing to the companion.
 
 Pre-flight check:
-- Run: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" check`
+- Run: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" check`
 - If it exits non-zero, stop and tell the user to run `/claude:setup`.
 
 Execution:
@@ -30,7 +30,7 @@ Execution:
 Foreground mode:
 - Run:
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" review "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" review "$ARGUMENTS"
 ```
 - Return the stdout verbatim, exactly as-is.
 - Do not paraphrase, summarize, or add commentary.
@@ -39,7 +39,7 @@ Background mode:
 - Launch the review with `Bash` in the background:
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" review "$ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" review "$ARGUMENTS"`,
   description: "Claude review",
   run_in_background: true
 })

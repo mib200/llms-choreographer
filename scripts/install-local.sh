@@ -32,6 +32,11 @@ install_claude() {
   for plugin in claude codex opencode llms-choreographer; do
     claude plugin install "${plugin}@llms-choreographer" 2>&1 | sed 's/^/    /' || \
       warn "  install failed: ${plugin}"
+    # Force-sync source into cache so edits take effect without a version bump
+    local cache_dir="$HOME/.claude/plugins/cache/llms-choreographer/${plugin}/1.0.0"
+    if [[ -d "$cache_dir" ]]; then
+      cp -r "$REPO_ROOT/plugins/${plugin}/." "$cache_dir/"
+    fi
   done
   ok "Claude Code plugins installed — run '/plugin' in a Claude session to verify"
 }

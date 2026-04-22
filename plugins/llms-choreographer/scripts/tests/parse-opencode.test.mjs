@@ -1,48 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOpenCodeNdJson } from '../companion.mjs';
+import { parseOpenCodeOutput } from '../companion.mjs';
 
-const ASSISTANT_EVENT = (text) => JSON.stringify({
-  type: 'assistant',
-  message: { content: [{ type: 'text', text }] },
+test('returns plain text unchanged', () => {
+  assert.equal(parseOpenCodeOutput('Hello from OpenCode'), 'Hello from OpenCode');
 });
 
-test('extracts text from a single assistant event', () => {
-  const raw = ASSISTANT_EVENT('Hello from OpenCode');
-  assert.equal(parseOpenCodeNdJson(raw), 'Hello from OpenCode');
+test('strips ANSI escape codes', () => {
+  assert.equal(parseOpenCodeOutput('\x1b[32mgreen text\x1b[0m'), 'green text');
 });
 
-test('concatenates multiple assistant text blocks', () => {
-  const raw = [
-    ASSISTANT_EVENT('First part.'),
-    ASSISTANT_EVENT('Second part.'),
-  ].join('\n');
-  assert.equal(parseOpenCodeNdJson(raw), 'First part.\nSecond part.');
+test('trims surrounding whitespace', () => {
+  assert.equal(parseOpenCodeOutput('  raw fallback output  '), 'raw fallback output');
 });
 
-test('skips non-assistant event types', () => {
-  const raw = [
-    JSON.stringify({ type: 'tool_use', id: 'x' }),
-    ASSISTANT_EVENT('Only this'),
-    JSON.stringify({ type: 'tool_result', content: 'ignored' }),
-  ].join('\n');
-  assert.equal(parseOpenCodeNdJson(raw), 'Only this');
-});
-
-test('skips non-JSON progress lines', () => {
-  const raw = [
-    'Connecting to OpenCode...',
-    ASSISTANT_EVENT('Real answer'),
-    '[progress] done',
-  ].join('\n');
-  assert.equal(parseOpenCodeNdJson(raw), 'Real answer');
-});
-
-test('falls back to raw trimmed output when no assistant events found', () => {
-  const raw = '  raw fallback output  ';
-  assert.equal(parseOpenCodeNdJson(raw), 'raw fallback output');
+test('filters empty lines', () => {
+  const raw = 'line one\n\n\nline two';
+  assert.equal(parseOpenCodeOutput(raw), 'line one\nline two');
 });
 
 test('handles empty input gracefully', () => {
-  assert.equal(parseOpenCodeNdJson(''), '');
+  assert.equal(parseOpenCodeOutput(''), '');
 });

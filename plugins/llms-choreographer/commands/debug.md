@@ -28,13 +28,13 @@ The companion automatically checks which agents are installed. Missing agents ar
 
 **Foreground execution:**
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" debug $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" debug $ARGUMENTS
 ```
 
 **Background execution:**
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" debug $ARGUMENTS`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" debug $ARGUMENTS`,
   description: "Parallel debug",
   run_in_background: true
 })

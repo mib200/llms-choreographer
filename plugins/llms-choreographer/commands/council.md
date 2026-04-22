@@ -28,13 +28,13 @@ The companion automatically checks which agents are installed. Missing agents ar
 
 **Foreground execution:**
 ```bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" council $ARGUMENTS
+node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" council $ARGUMENTS
 ```
 
 **Background execution:**
 ```typescript
 Bash({
-  command: `node "$CLAUDE_PLUGIN_ROOT/scripts/companion.mjs" council $ARGUMENTS`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" council $ARGUMENTS`,
   description: "LLM council",
   run_in_background: true
 })
