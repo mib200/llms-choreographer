@@ -1,46 +1,50 @@
 # Session Summary — choreographer
 
-**When:** 2026-04-22T19:58:23Z
-**Branch:** main @ f132dca
-**Previous session:** 2026-04-22T08:53:49Z — graphify + learn init + feature-trim rename
+**When:** 2026-04-23T01:45:00Z
+**Branch:** feature/monorepo-restructure @ f132dca (no commits yet on branch)
+**Previous session:** 2026-04-22T19:58:23Z — inter-agent communication bug fixes + docs update
 
 ## Completed
 
-- **Inter-agent communication bugs fixed** (`feature/issues` branch, merged to `main @ 2803ee5`):
-  - `${CLAUDE_PLUGIN_ROOT}` curly-brace syntax fixed in all 9 plugin command files (`plugins/claude/`, `plugins/codex/`, `plugins/opencode/`, `plugins/llms-choreographer/` commands)
-  - `opencode run --format json` removed — opencode emits plain text; replaced with `parseOpenCodeOutput` (ANSI stripping) in `companion.mjs`
-  - `claude --print` subprocess fix — `--output-format=stream-json --verbose | jq` pipeline; added `parseClaudeStreamJson` to `companion.mjs`
-  - `PLUGIN_ARGS` expansion removed from all `for-codex` SKILL files (caused "unknown option" error in Codex shell)
-  - `jq` replaced fragile node one-liner in all for-codex SKILL files
-  - `plugins/opencode` cache created and synced to `~/.claude/plugins/cache/llms-choreographer/opencode/1.0.0/`
-- **`install-local.sh` updated** — added cache-sync step after each plugin install (`scripts/install-local.sh`)
-- **Docs updated** to reflect all fixes:
-  - `README.md` — delegation table, test count (33→32), delegation directions
-  - `docs/codebase-summary.md` — exports list, test description, for-codex invocation notes
-  - `docs/delegation.md` — Round-Trip Matrix, all Code Snippets, Worked Examples, Caveats
-  - `docs/project-overview-pdr.md` — agent mesh table
-- **`graphify --update`** run — graph rebuilt: 73 nodes, 129 edges, 6 communities. `graphify-out/graph.html` + `GRAPH_REPORT.md` updated.
+- **Research & plan drafted** for full monorepo restructure. Plan file: `/Users/mk/.claude/plans/what-were-we-doing-lazy-lantern.md` (~12 KB).
+- **Codex plugin system + OpenCode plugin system researched** via `ctx_fetch_and_index`:
+  - Codex: `.codex-plugin/plugin.json` manifest. Skills only — no slash commands. Reads `.claude-plugin/marketplace.json` OR `.agents/plugins/marketplace.json`. Cache at `~/.codex/plugins/cache/$MKT/$PLUGIN/$VER/`.
+  - OpenCode: npm packages + `.opencode/commands/*.md` slash commands (filename = cmd, no colon namespace). `.opencode/plugins/*.ts` for TS hooks.
+  - Reference plugin pattern confirmed at `/Users/mk/Repositories/mib200/AI/claude/plugins/session-choreographer/` — marketplace name `mib200`, owner `Manish Kumar`, plugin source `./plugin`.
+- **Feature branch created**: `feature/monorepo-restructure` off `main`. Working tree clean.
+- **Task list seeded**: 10 tasks tracking implementation chunks (core extract → 3 plugin scaffolds → bundler → marketplaces → installers → legacy delete → docs → verify).
+- **Existing companion.mjs code read + indexed** via ctx_batch_execute. Key functions preserved: `parseClaudeStreamJson`, `parseOpenCodeOutput`, `runAgent`, `REGISTRY`, `filterAvailable`, `requireAvailable`, `stripFlags`, `printDelimited`, `printJSON`. Subcommands: check-all, council, review, debug, second-opinion, vote.
+- **Test files enumerated**: 7 test suites under `plugins/llms-choreographer/scripts/tests/` (check-all, json-output, min-agents, parse-opencode, second-opinion-fallback, strip-flags, vote) + helpers/ dir.
 
 ## Current file state
 
-- **Modified:** _(none — working tree clean)_
+- **Modified:** _(none — feature branch created, no files changed yet)_
 - **Untracked:** _(none)_
-- **Branch status vs main:** on `main`, no branch ahead/behind (single branch, no remote)
+- **Branch status vs main:** on `feature/monorepo-restructure`, 0 ahead / 0 behind. No remote.
 
 ## Pending TODOs
 
-- [ ] Verify all agent delegation works end-to-end in a live session (Codex→Claude, Claude→council, etc.)
-- [ ] Rename sweep: ~60 files on `main` still contain `chorus` refs (for-cursor, for-gemini, for-kilo, for-codex partial, .github, docs/announcement, AGENTS.md, CLAUDE.md)
-- [ ] Rebuild code-review-graph index (may still reference stale paths after renames)
-- [ ] Delete or commit `scripts/rename-chorus.mjs` (untracked scratch script)
-- [ ] Run `/autoresearch:learn --mode update` to regenerate docs with current state
+- [ ] **Chunk 1** — Extract `core/` from existing `plugins/llms-choreographer/scripts/companion.mjs` → `core/{companion,parsers,runners}.mjs` + move tests to `core/tests/`.
+- [ ] **Chunk 2** — Scaffold `plugin-claude/` (manifest, 8 commands under `commands/*.md` → `/choreo:*`, 1 SKILL.md, src/entry.mjs).
+- [ ] **Chunk 3** — Scaffold `plugin-codex/` (`.codex-plugin/plugin.json` per OpenAI schema, 9 skills under `skills/*/SKILL.md`, src/entry.mjs).
+- [ ] **Chunk 4** — Scaffold `plugin-opencode/` (npm package `@mib200/choreo-opencode`, `.opencode/plugins/choreo.ts`, 8 commands `choreo-*.md` → `/choreo-*`, dist output).
+- [ ] **Chunk 5** — Write `scripts/bundle.mjs` (esbuild) + wire `npm run bundle`. Produces 3 bundled companion.mjs files.
+- [ ] **Chunk 6** — Rewrite `.claude-plugin/marketplace.json` (name: `mib200`) + create `.agents/plugins/marketplace.json` for Codex.
+- [ ] **Chunk 7** — Write `bin/install.sh` (bash curl entry) + `bin/install.mjs` (npx entry). Flags: `--target=claude|codex|opencode|all`.
+- [ ] **Chunk 8** — Delete legacy: `plugins/`, `for-codex/`, `.opencode/`, `learn/260422-init/`, `.worktrees/`, old installer scripts. Only AFTER verification.
+- [ ] **Chunk 9** — Update README.md + docs/{delegation,codebase-summary,project-overview-pdr}.md for new structure.
+- [ ] **Chunk 10** — Verify: `npm run bundle`, `npm test`, Claude/Codex/OpenCode install, `/choreo:council` e2e test, graphify rebuild.
+- [ ] **Merge to main** + tag v1.0.0 after full verification.
 
 ## Open bugs / concerns
 
-- **`claude --print` cold-start latency** (~4-5s per subprocess call) — caused by Bedrock loading `cacheCreationInputTokens: 57K` from hooks/CLAUDE.md on every subprocess. Not a code bug; inherent to this setup.
-- **Partial rename still outstanding** — `chorus` refs exist in for-cursor, for-gemini, for-kilo, for-codex partial, .github. These are functional but inconsistent with the `llms-choreographer` brand.
-- **No git remote configured** — merges are local only; `git push` will fail until a remote is added.
-- **`claude --print` on non-Bedrock** — stream-json pipeline assumed throughout; behavior on direct Anthropic API key untested.
+- **Session context at 89%** when wrap triggered — implementation began but immediately hit context limit. Fresh session needed before coding begins.
+- **Bundled outputs in git** — decided YES (commit bundles). Contributors still run `npm run bundle` before commit; users installing from git skip build.
+- **Version sync** — all 3 plugins + root package.json pinned to 1.0.0 initially. One bump per release.
+- **OpenCode namespace limitation** — no colon support in slash commands. Chose `choreo-` prefix (`/choreo-claude`, `/choreo-codex`, etc). Not true `/choreo:*` parity with Claude/Codex.
+- **Codex multi-skill auto-fire risk** — 9 separate SKILL.md files. Codex may invoke skills on keyword matches. Mitigation: tight `description:` frontmatter. Monitor in verification.
+- **No git remote configured** — merges local only. `git push` fails until user adds remote.
+- **Claude subprocess Bedrock latency** (~4-5s cold-start) — inherent, not a code bug. Carried from prior session.
 
 ## Key decisions
 
@@ -50,18 +54,23 @@
 | 2 | `--output-format=stream-json --verbose \| jq` for claude subprocess | Plain `--print` returns empty `result` field on Bedrock; stream-json events have text |
 | 3 | Remove `opencode --format json` entirely | Flag doesn't exist; opencode emits plain text + ANSI |
 | 4 | Drop `PLUGIN_ARGS` from for-codex skills | Multi-value string passed as single token in Codex shell → "unknown option" error |
-| 5 | `jq` over node one-liner for stream-json parsing | Node inline parser with mixed quotes broke in Codex shell execution |
-| 6 | Merge `feature/issues` to local `main` (no remote PR) | No remote configured; local merge preserves all commits |
-| 7 | Rename slugs/paths: llms-choreographer | Matches `package.json.name` (carried from previous session) |
-| 8 | `author: "Manish Kumar"` in package.json | User confirmed git user name (carried from previous session) |
+| 5 | **Monorepo over Hybrid** | User wants per-runtime isolation + independent versioning potential. Chosen after weighing bundle-at-build-time cost. |
+| 6 | **esbuild bundler** | Bundles `core/` into each `plugin-*/` pre-commit. Standard JS monorepo pattern. 5-line config. |
+| 7 | **Commit bundled output to git** | Users installing from marketplace/curl don't need Node toolchain. Contributors rebuild via `npm run bundle` before commit. |
+| 8 | **Version sync across plugins** | All 3 plugins share version. One changelog, one bump per release. |
+| 9 | **Branch workflow** | Build new structure on `feature/monorepo-restructure`. Merge after verification. |
+| 10 | **Namespace: `/choreo:*` for Claude+Codex, `/choreo-*` for OpenCode** | Claude+Codex plugins named `choreo` (colon namespace). OpenCode filename=cmd, no colon → prefix convention. |
+| 11 | **Marketplace name: `mib200`** | Matches session-choreographer reference + user's GitHub org. |
+| 12 | **9 separate Codex skills** (claude, codex, opencode, council, parallel-review, parallel-debug, second-opinion, vote, debug) | Closer to Claude slash-cmd parity. Accept auto-fire risk; mitigate via tight descriptions. |
+| 13 | **Both bash curl AND npx installers** | `bin/install.sh` for marketplace-less users + `bin/install.mjs` for npm ecosystem. Shared arg parser. |
+| 14 | **Aggressive prune + consolidate for-codex/.opencode** | Delete `plugins/`, `for-codex/`, `.opencode/`, `learn/260422-init/`, `.worktrees/`, duplicate `claude-print-args.sh`, obsolete installer scripts, announcement docs. |
+| 15 | **Delete all `setup.md` commands** | Trivial health-check wrappers — confirmed unnecessary. |
 
 ## Recap suggestions
 
-- Test full council flow: in Claude session run `/llms-choreographer:council "is 2+2=4?"` — should invoke all 3 agents
-- Check Codex: `use the council skill on: one-word answer: sky color?` — verifies stream-json pipeline
-- Remaining chorus rename: `grep -r 'chorus' for-cursor/ for-gemini/ for-kilo/ AGENTS.md CLAUDE.md .github/ 2>/dev/null | head -20`
-- Add git remote when ready to push: `git remote add origin <url> && git push -u origin main`
-
-## Open plan files
-
-- `/Users/mk/.claude/plans/lexical-enchanting-hejlsberg.md`: completed (ship + docs update done)
+- Next session starts **Chunk 1**: extract `core/` from `plugins/llms-choreographer/scripts/companion.mjs`. Preserve all 7 existing tests. Write new unit tests for parsers.
+- **Read these first**: `/Users/mk/.claude/plans/what-were-we-doing-lazy-lantern.md` (full plan), existing `plugins/llms-choreographer/scripts/companion.mjs` (source code to extract).
+- **Reference pattern**: `/Users/mk/Repositories/mib200/AI/claude/plugins/session-choreographer/` — study `marketplace.json` + `plugin/.claude-plugin/plugin.json` + `install.sh`.
+- **Codex plugin docs**: `.codex-plugin/plugin.json` schema — fields `name`, `version`, `description`, `author`, `homepage`, `repository`, `license`, `keywords`, `skills: "./skills"`, `interface: {displayName, category, capabilities}`.
+- **Fresh session, then**: `git checkout feature/monorepo-restructure` and proceed through 10-chunk task list. Don't start implementation in same session as plan — context pollution.
+- **Execution order reminder**: core → plugin-claude → plugin-codex → plugin-opencode → bundler → marketplaces → installers → verify → delete legacy → docs → commit.
