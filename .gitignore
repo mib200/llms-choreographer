@@ -1,7 +1,7 @@
 .env
 node_modules/
 .serena/
-graphify-out/
+**/**/graphify-out/cache/**
 code-review-graph/
 .worktrees/
 .DS_Store
