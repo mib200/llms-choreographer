@@ -23,10 +23,10 @@ All directions are operational:
 | From → To | Mechanism |
 |-----------|-----------|
 | Claude Code → Codex | `/codex:run <task>` → `codex exec` |
-| Claude Code → OpenCode | `/opencode:run <task>` → `opencode run --format json` |
-| Claude Code → Claude | `/claude:run <task>` → second `claude --print` instance |
-| Codex → Claude Code | `claude` skill → `claude --print --dangerously-skip-permissions` |
-| Codex → OpenCode | `opencode` skill → `opencode run --format json` |
+| Claude Code → OpenCode | `/opencode:run <task>` → `opencode run` |
+| Claude Code → Claude | `/claude:run <task>` → second `claude --print --output-format=stream-json` instance |
+| Codex → Claude Code | `claude` skill → `claude --print --output-format=stream-json \| jq` |
+| Codex → OpenCode | `opencode` skill → `opencode run` |
 | OpenCode → Claude Code | `/delegate-claude <task>` → `claude --print` |
 | OpenCode → Codex | `/delegate-codex <task>` → `codex exec` |
 
@@ -213,7 +213,7 @@ Type `/` to see all 8 commands. Zero per-turn token cost — commands are lazy-l
 npm test
 ```
 
-Tests live in `plugins/llms-choreographer/scripts/tests/` — 7 test files, 33 assertions. No live CLIs required.
+Tests live in `plugins/llms-choreographer/scripts/tests/` — 7 test files, 32 assertions. No live CLIs required.
 
 See [`docs/codebase-summary.md`](docs/codebase-summary.md) for test file inventory.
 

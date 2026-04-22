@@ -28,7 +28,7 @@ Each plugin dir contains:
 
 | File | Purpose |
 |------|---------|
-| `scripts/companion.mjs` | Core parallel orchestrator. Exports: `REGISTRY`, `checkCli`, `filterAvailable`, `printMissingWarning`, `stripFlags`. Subcommands: `council`, `review`, `debug`, `second-opinion`, `vote` |
+| `scripts/companion.mjs` | Core parallel orchestrator. Exports: `REGISTRY`, `checkCli`, `filterAvailable`, `printMissingWarning`, `stripFlags`, `parseClaudeStreamJson`, `parseOpenCodeOutput`. Subcommands: `council`, `review`, `debug`, `second-opinion`, `vote` |
 | `commands/council.md` | Slash-command spec: run task across multiple agents, collate responses |
 | `commands/review.md` | Slash-command spec: parallel code review |
 | `commands/debug.md` | Slash-command spec: parallel debugging |
@@ -56,6 +56,8 @@ Zero per-turn token cost — loaded only when user types `/`.
 ### `for-codex/` — Codex skills
 
 One `SKILL.md` per delegation target: `claude`, `codex`, `council`, `opencode`, `parallel-debug`, `parallel-review`, `second-opinion`, `vote`.
+
+Claude invocations use `--output-format=stream-json --verbose | jq` to extract assistant text (plain `--print` returns empty `result` on Bedrock). OpenCode invocations use plain `opencode run` (no `--format json` — opencode emits plain text, not ndJSON).
 
 ### `.claude-plugin/`
 
@@ -88,13 +90,13 @@ const REGISTRY = {
 | `check-all.test.mjs` | `checkCli` / `filterAvailable` |
 | `json-output.test.mjs` | JSONL output formatting |
 | `min-agents.test.mjs` | Minimum agent count enforcement |
-| `parse-opencode.test.mjs` | `parseOpenCodeNdJson` fixture tests |
+| `parse-opencode.test.mjs` | `parseOpenCodeOutput` (ANSI stripping, plain-text parsing) |
 | `second-opinion-fallback.test.mjs` | Fallback behavior when only 1 agent available |
 | `strip-flags.test.mjs` | `stripFlags` helper |
 | `vote.test.mjs` | Vote subcommand logic |
 | `helpers/fake-agents.mjs` | Shared test fixture |
 
-**Total: 7 test files. Run with:** `npm test`
+**Total: 7 test files, 32 assertions. Run with:** `npm test`
 
 ---
 
