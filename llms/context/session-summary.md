@@ -32,11 +32,9 @@
 
 - [ ] Merge `feature/monorepo-restructure` → main + tag v1.0.0
 - [ ] Merge/rebase `fixes/feature-monorepo` → main
-- [ ] Discuss H-01 (`--dangerously-skip-permissions`) — architectural, needs decision
 
 ## Open Bugs / Concerns
 
-- **H-01 UNRESOLVED** `--dangerously-skip-permissions` universal — `core/companion.mjs:53+` — design decision required
 - **npm name unclaimed** `@mib200/choreographer-monorepo` — registry 404
 - **No git remote** — all work local only
 
@@ -52,15 +50,14 @@
 | 6 | `requireAvailable` throws Error, CLI entry owns exit | Library contract |
 | 7 | `runAgent` timeout 5min, `checkCli` timeout 5s | Practical LLM response window |
 | 8 | vote all-INVALID = CRITICAL exit 1 | Correctness contract |
+| 9 | H-01 closed: `--dangerously-skip-permissions` universal | Ignored permanently per user decision 2026-04-23 |
 
 ## Recap Suggestions
 
 - Merge: rebase `fixes/feature-monorepo` onto `feature/monorepo-restructure`, then merge to main
 - Tag v1.0.0 after merge
-- H-01 options: (a) remove from vote/council/debug, (b) `--allowedTools read`, (c) document only
 - Claim npm name `@mib200/choreographer-monorepo` before publishing
 
 ## Open Plan Files
 
-- `predict/260423-10348-quality/handoff.json` — H-01 still open
-- `predict/260423-10348-quality/findings.md` — complete findings with evidence
+- `predict/260423-10348-quality/findings.md` — complete findings with evidence (H-01 closed)
