@@ -27,7 +27,7 @@ All directions are operational:
 | Claude Code → Claude | `/claude:run <task>` → second `claude --print --output-format=stream-json` instance |
 | Codex → Claude Code | `claude` skill → `claude --print --output-format=stream-json \| jq` |
 | Codex → OpenCode | `opencode` skill → `opencode run` |
-| OpenCode → Claude Code | `/delegate-claude <task>` → `claude --print` |
+| OpenCode → Claude Code | `/delegate-claude <task>` → `claude --print --output-format=stream-json \| jq` |
 | OpenCode → Codex | `/delegate-codex <task>` → `codex exec` |
 
 See [`docs/delegation.md`](docs/delegation.md) for code snippets and worked examples.

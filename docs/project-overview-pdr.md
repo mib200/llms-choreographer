@@ -53,9 +53,9 @@ The companion orchestrator (`companion.mjs`) maintains a registry of agent binar
 
 | Key      | Binary   | Notes                         |
 |----------|----------|-------------------------------|
-| claude   | claude   | Non-interactive via `--print` |
-| codex    | codex    | `codex exec`                  |
-| opencode | opencode | `opencode run --format json`  |
+| claude   | claude   | Non-interactive via `--print --output-format=stream-json --verbose \| jq` |
+| codex    | codex    | `codex exec`                                                              |
+| opencode | opencode | `opencode run` (plain text output, ANSI-stripped)                         |
 
 ---
 

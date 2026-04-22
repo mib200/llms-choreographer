@@ -7,10 +7,10 @@ All six directions between Claude Code, Codex, and OpenCode are operational.
 | From → To | Mechanism | File:Line |
 |-----------|-----------|-----------|
 | Claude → Codex | `spawn('codex', ['exec', task], {stdio:['ignore','pipe','pipe']})` | `plugins/codex/scripts/companion.mjs` |
-| Claude → OpenCode | `spawn('opencode', ['run', task, '--format', 'json', '--dangerously-skip-permissions'], {stdio:['ignore','pipe','pipe']})` + ndJSON parse | `plugins/opencode/scripts/companion.mjs` |
-| Codex → Claude | `claude --print "<task>" --dangerously-skip-permissions` (Codex shell) | `for-codex/claude/SKILL.md` |
-| Codex → OpenCode | `opencode run "<task>" --format json --dangerously-skip-permissions` (Codex shell) | `for-codex/opencode/SKILL.md` |
-| OpenCode → Claude | `/delegate-claude <task>` slash command → `claude --print` | `.opencode/commands/delegate-claude.md` |
+| Claude → OpenCode | `spawn('opencode', ['run', task, '--dangerously-skip-permissions'], {stdio:['ignore','pipe','pipe']})` + ANSI-strip | `plugins/opencode/scripts/companion.mjs` |
+| Codex → Claude | `claude --print --output-format=stream-json --verbose "<task>" --dangerously-skip-permissions \| jq` (Codex shell) | `for-codex/claude/SKILL.md` |
+| Codex → OpenCode | `opencode run "<task>" --dangerously-skip-permissions` (Codex shell) | `for-codex/opencode/SKILL.md` |
+| OpenCode → Claude | `/delegate-claude <task>` slash command → `claude --print --output-format=stream-json --verbose \| jq` | `.opencode/commands/delegate-claude.md` |
 | OpenCode → Codex | `/delegate-codex <task>` slash command → `codex exec` | `.opencode/commands/delegate-codex.md` |
 
 ## Code Snippets
@@ -26,50 +26,41 @@ const proc = spawn('codex', ['exec', task], {
 
 ### Claude → OpenCode (`plugins/opencode/scripts/companion.mjs`)
 ```js
-function runOpenCode(task) {
-  const args = ['run', task, '--format', 'json', '--dangerously-skip-permissions'];
-  const serverUrl = process.env.OPENCODE_SERVER_URL;
-  if (serverUrl) args.push('--attach', serverUrl);
-  const proc = spawn('opencode', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  // buffer stdout, parse ndJSON on close
+// opencode emits plain text (+ ANSI escape codes) — no --format flag needed
+function parseOpenCodeOutput(raw) {
+  return raw
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')  // strip ANSI codes
+    .split('\n')
+    .filter(l => l.trim())
+    .join('\n')
+    .trim() || raw.trim();
 }
 
-function parseOpenCodeOutput(raw) {
-  // extract text from {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}} events
-  const lines = raw.split('\n').filter(l => l.trim());
-  const messages = [];
-  for (const line of lines) {
-    try {
-      const obj = JSON.parse(line);
-      if (obj.type === 'assistant' && obj.message?.content) {
-        for (const block of obj.message.content) {
-          if (block.type === 'text') messages.push(block.text);
-        }
-      }
-    } catch { /* non-JSON progress lines */ }
-  }
-  return messages.length > 0 ? messages.join('\n').trim() : raw.trim();
-}
+const proc = spawn('opencode', ['run', task, '--dangerously-skip-permissions'], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+// buffer proc.stdout, call parseOpenCodeOutput on close
 ```
 
 ### Codex → Claude (`for-codex/claude/SKILL.md`)
 ```bash
-claude --print "<task>" --dangerously-skip-permissions
+claude --print --output-format=stream-json --verbose "<task>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text'
 ```
-Codex captures stdout verbatim. `--dangerously-skip-permissions` enables non-interactive tool use.
+`--output-format=stream-json --verbose` is required — plain `--print` returns an empty `result` field on Bedrock. `jq` extracts assistant text from the ndJSON event stream. `--dangerously-skip-permissions` enables non-interactive tool use.
 
 ### Codex → OpenCode (`for-codex/opencode/SKILL.md`)
 ```bash
-opencode run "<task>" --format json --dangerously-skip-permissions
-# Parse assistant text from ndJSON stream:
-# {"type":"assistant","message":{"content":[{"type":"text","text":"..."}]}}
+opencode run "<task>" --dangerously-skip-permissions
+# Output is plain text with ANSI escape codes — strip ANSI, return verbatim.
 ```
 
 ### OpenCode → Claude (`.opencode/commands/delegate-claude.md`)
 ```bash
-claude --print "$ARGUMENTS" --dangerously-skip-permissions
+claude --print --output-format=stream-json --verbose "$ARGUMENTS" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text'
 ```
-OpenCode user types `/delegate-claude <task>`. Shell output captured and injected into the prompt context.
+OpenCode user types `/delegate-claude <task>`. The `jq` pipeline extracts assistant text from the stream-json event stream; output is injected into the prompt context.
 
 ### OpenCode → Codex (`.opencode/commands/delegate-codex.md`)
 ```bash
@@ -85,10 +76,10 @@ From Claude Code, invoke:
 ```
 
 Claude Code calls `plugins/opencode/scripts/companion.mjs run "explain closures in JavaScript"`, which:
-1. Spawns `opencode run "explain closures in JavaScript" --format json --dangerously-skip-permissions`
-2. Buffers the ndJSON event stream from stdout
-3. Extracts all `{"type":"assistant"}` text blocks
-4. Returns the concatenated text as the Bash tool result back to Claude Code
+1. Spawns `opencode run "explain closures in JavaScript" --dangerously-skip-permissions`
+2. Buffers plain-text stdout (opencode emits plain text, not ndJSON)
+3. Strips ANSI escape codes
+4. Returns the cleaned text as the Bash tool result back to Claude Code
 
 ## Worked Example: OpenCode → Claude
 
@@ -97,7 +88,7 @@ Inside an OpenCode session, type:
 /delegate-claude explain closures in JavaScript
 ```
 
-OpenCode runs `claude --print "explain closures in JavaScript" --dangerously-skip-permissions`, captures stdout, and injects it into the conversation context.
+OpenCode runs `claude --print --output-format=stream-json --verbose "explain closures in JavaScript" --dangerously-skip-permissions | jq -r '...'`, extracts assistant text via the jq pipeline, and injects it into the conversation context.
 
 ## OpenCode Slash Commands
 
@@ -130,7 +121,8 @@ When `OPENCODE_SERVER_URL` is set, the companion appends `--attach $OPENCODE_SER
 ## Caveats
 
 - **Codex sandbox**: file access limited to the working directory — cross-project delegation yields partial results.
-- **OpenCode ndJSON format**: only `{"type":"assistant"}` events carry assistant text. Progress events (`tool_use`, `tool_result`, etc.) are silently skipped by the parser.
+- **OpenCode plain text**: opencode emits plain text with ANSI codes, not ndJSON. `parseOpenCodeOutput` strips ANSI and returns the text verbatim.
+- **Claude subprocess output**: `claude --print` returns an empty `result` field on Bedrock when run as a subprocess. Use `--output-format=stream-json --verbose` and extract text from `{"type":"assistant"}` events via `jq`.
 - **Session continuity**: pass `--session <id>` or `--continue` to `opencode run` to maintain conversation state across calls (useful for multi-turn council sessions).
 - **`--dangerously-skip-permissions`**: intentional on all delegated Claude calls — the delegated instance runs in a sandboxed context under the host agent's supervision.
 - **Slash commands are user-initiated**: OpenCode's model cannot self-invoke slash commands mid-reasoning. If autonomous model-initiated delegation is needed, an MCP server is required (not included; build separately if needed).

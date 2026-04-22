@@ -42,7 +42,7 @@ Zero per-turn token cost — loaded only when user types `/`.
 
 | File | Purpose |
 |------|---------|
-| `delegate-claude.md` | Run `claude --print` with given task, return output |
+| `delegate-claude.md` | Run `claude --print --output-format=stream-json --verbose \| jq` with given task, return assistant text |
 | `delegate-codex.md` | Run `codex exec` with given task, return output |
 | `check-agents.md` | Report ✓/✗ availability of claude and codex |
 | `council.md` | Claude (correctness) + Codex (scope) in parallel |
