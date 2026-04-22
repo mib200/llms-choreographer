@@ -48,6 +48,16 @@ uninstall_codex() {
       fi
     fi
   done
+  # Remove shared helper symlink
+  local shared_dst="$HOME/.codex/skills/_shared"
+  if [[ -L "$shared_dst" ]]; then
+    local link_target
+    link_target="$(readlink "$shared_dst")"
+    if [[ "$link_target" == "$REPO_ROOT"/* ]]; then
+      rm -f "$shared_dst"
+      printf '    removed: ~/.codex/skills/_shared\n'
+    fi
+  fi
   ok "Codex skill symlinks removed"
 }
 

@@ -19,7 +19,8 @@ You review for **SCOPE AND SIMPLICITY**: unnecessary complexity, changes exceedi
 ```bash
 git diff HEAD > /tmp/llms-choreographer-diff.txt
 
-claude --print "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --dangerously-skip-permissions &
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
 opencode run "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --format json --dangerously-skip-permissions &

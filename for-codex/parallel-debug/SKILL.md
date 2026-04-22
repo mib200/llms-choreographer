@@ -19,7 +19,8 @@ You generate hypotheses focused on **edge cases in input handling, type coercion
 ```bash
 SYMPTOM="<symptom>"
 
-claude --print "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
 opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --format json --dangerously-skip-permissions &

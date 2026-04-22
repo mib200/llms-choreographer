@@ -12,7 +12,8 @@ TMPDIR_BASE=$(mktemp -d)
 CLAUDE_OUT="$TMPDIR_BASE/claude.out"
 CODEX_OUT="$TMPDIR_BASE/codex.out"
 
-claude --print "$PROMPT" --dangerously-skip-permissions > "$CLAUDE_OUT" 2>&1 &
+PLUGIN_ARGS=$(sh "$HELPERS/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "$PROMPT" --dangerously-skip-permissions > "$CLAUDE_OUT" 2>&1 &
 CLAUDE_PID=$!
 codex exec "$PROMPT" > "$CODEX_OUT" 2>&1 &
 CODEX_PID=$!

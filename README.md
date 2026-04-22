@@ -46,7 +46,37 @@ See [`docs/delegation.md`](docs/delegation.md) for code snippets and worked exam
 
 ---
 
-### Claude Code — plugin install
+### Quick install — one script for all three CLIs
+
+```bash
+git clone https://github.com/valpere/llms-choreographer.git
+cd llms-choreographer
+
+# Install into all three CLIs at once (idempotent — safe to re-run)
+./scripts/install-local.sh            # all
+./scripts/install-local.sh claude     # Claude Code only
+./scripts/install-local.sh codex      # Codex only
+./scripts/install-local.sh opencode   # OpenCode only
+```
+
+What it does:
+- **Claude Code** → runs `claude plugin marketplace add <repo>` + `claude plugin install <name>@llms-choreographer` for all 4 plugins.
+- **Codex** → symlinks `for-codex/<name>/` into `~/.codex/skills/<name>/` — skills usable from any directory.
+- **OpenCode** → symlinks `.opencode/commands/*.md` into `~/.config/opencode/commands/*.md` — slash commands usable from any directory.
+
+To uninstall:
+```bash
+./scripts/uninstall-local.sh          # all
+./scripts/uninstall-local.sh codex    # Codex only (etc.)
+```
+
+The uninstall script only removes symlinks that point back into this repo — unrelated skills/commands in your global dirs are untouched.
+
+---
+
+### Manual install — per CLI
+
+#### Claude Code — plugin install
 
 Claude Code loads plugins from a local marketplace registry.
 
@@ -76,10 +106,15 @@ Should list: `claude`, `codex`, `opencode`, `llms-choreographer`.
 
 ---
 
-### Codex — skills (zero install)
+#### Codex — skills
 
-Codex auto-discovers `SKILL.md` files from the working directory. No install step needed — launch Codex inside this repo and the skills are live.
+**Global (any directory):** symlink each skill dir into `~/.codex/skills/`:
+```bash
+mkdir -p ~/.codex/skills
+for d in for-codex/*/; do ln -sfn "$(pwd)/$d" "$HOME/.codex/skills/$(basename "$d")"; done
+```
 
+**Project-only (no install):** Codex also auto-discovers `SKILL.md` from the working directory. Launch Codex inside this repo:
 ```bash
 cd /path/to/llms-choreographer
 codex
@@ -104,10 +139,16 @@ use the council skill on: should we adopt TypeScript for this project?
 
 ---
 
-### OpenCode — custom slash commands (zero install)
+#### OpenCode — custom slash commands
 
-OpenCode auto-discovers `.opencode/commands/*.md` from the working directory. Launch OpenCode inside this repo.
+**Global (any directory):** symlink commands into `~/.config/opencode/commands/`:
+```bash
+mkdir -p ~/.config/opencode/commands
+for f in .opencode/commands/*.md; do ln -sf "$(pwd)/$f" "$HOME/.config/opencode/commands/$(basename "$f")"; done
+ln -sfn "$(pwd)/.opencode/commands/_helpers" "$HOME/.config/opencode/commands/_helpers"
+```
 
+**Project-only (no install):** OpenCode also auto-discovers from the working directory. Launch inside this repo:
 ```bash
 cd /path/to/llms-choreographer
 opencode

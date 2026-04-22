@@ -14,7 +14,8 @@ description: Quick independent second opinion from Claude or OpenCode on a decis
 
 ```bash
 # Ask Claude (default — depth, correctness, edge cases)
-claude --print "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
 
 # Or ask OpenCode (integration — does this fit the codebase?)
 opencode run "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --format json --dangerously-skip-permissions

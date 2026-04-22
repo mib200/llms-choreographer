@@ -27,7 +27,8 @@ You are the **SCOPE reviewer**. Focus on: unnecessary complexity, premature abst
 Spawn both agents in parallel, then add your own scope review:
 
 ```bash
-claude --print "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
 opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --format json --dangerously-skip-permissions &

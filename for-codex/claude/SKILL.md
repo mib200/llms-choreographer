@@ -19,7 +19,8 @@ This skill delegates tasks to Claude Code when the user asks for a second opinio
 Run Claude Code non-interactively:
 
 ```bash
-claude --print "<task>" --dangerously-skip-permissions
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "<task>" --dangerously-skip-permissions
 ```
 
 The `--print` flag runs Claude in non-interactive mode.

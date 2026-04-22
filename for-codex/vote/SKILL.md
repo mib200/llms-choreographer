@@ -21,7 +21,8 @@ You are the **SCOPE voter**. Your vote should reflect whether the proposition is
 Spawn two agents in parallel, then cast your own vote:
 
 ```bash
-claude --print "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions &
+PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
+claude --print $PLUGIN_ARGS "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
 opencode run "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --format json --dangerously-skip-permissions &

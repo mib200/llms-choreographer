@@ -49,6 +49,16 @@ install_codex() {
     ln -s "$skill_dir" "$target"
     printf '    ~/.codex/skills/%s → %s\n' "$name" "$skill_dir"
   done
+  # Link shared helper dir (_shared) so skills can access claude-print-args.sh
+  local shared_src="$REPO_ROOT/for-codex/_shared"
+  local shared_dst="$HOME/.codex/skills/_shared"
+  if [[ -d "$shared_src" ]]; then
+    if [[ -L "$shared_dst" || -e "$shared_dst" ]]; then
+      rm -rf "$shared_dst"
+    fi
+    ln -s "$shared_src" "$shared_dst"
+    printf '    ~/.codex/skills/_shared → %s\n' "$shared_src"
+  fi
   ok "Codex skills linked — launch 'codex' from any dir to use them"
 }
 
