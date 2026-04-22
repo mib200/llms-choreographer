@@ -1,40 +1,44 @@
 # Session Summary — choreographer
 
-**When:** 2026-04-23T05:30:00Z
-**Branch:** feature/monorepo-restructure @ 119002d
-**Previous session:** 2026-04-23T05:10:00Z — chunks 1-8 complete
+**When:** 2026-04-23T05:50:00Z
+**Branch:** feature/monorepo-restructure @ ccdae6a
+**Status:** ALL 10 CHUNKS COMPLETE — ready for merge to main
 
 ## Completed This Session
 
-- **Chunks 1-8** — core/, 3 plugins, esbuild, installers, marketplaces, legacy deleted. All done.
-- **Chunk 9** — All 4 docs updated:
-  - `README.md` — rewritten: install matrix, `/choreo:*` command table, Codex skills table, OpenCode `/choreo-*` table, dev + smoke test section
-  - `docs/delegation.md` — rewritten: new round-trip matrix, code snippets using new paths, worked examples with `/choreo:council`
-  - `docs/codebase-summary.md` — rewritten: new directory inventory (core/, plugin-claude/, plugin-codex/, plugin-opencode/), updated key exports, test structure, how-to-run
-  - `docs/project-overview-pdr.md` — rewritten: new repo layout tree, agent mesh table, build pipeline description, updated non-goals
+All 10 planned chunks are done:
+
+1. **core/** extracted — parsers.mjs, runners.mjs, companion.mjs, 32 tests passing
+2. **plugin-claude/** — plugin.json, 8 commands (`/choreo:*`), SKILL.md, src/entry.mjs
+3. **plugin-codex/** — plugin.json, 9 skills, src/entry.mjs
+4. **plugin-opencode/** — package.json, choreo.ts, 8 commands (`/choreo-*`), src/entry.mjs
+5. **scripts/bundle.mjs** — esbuild, 3 targets, 439-line bundles each
+6. **Marketplaces** — `.claude-plugin/marketplace.json` (mib200/choreo → plugin-claude), `.agents/plugins/marketplace.json` (mib200/choreo → plugin-codex)
+7. **bin/install.sh + bin/install.mjs** — `--target=claude|codex|opencode|all`
+8. **Legacy deleted** — plugins/, for-codex/, .opencode/, old scripts
+9. **Docs updated** — README.md, docs/delegation.md, docs/codebase-summary.md, docs/project-overview-pdr.md
+10. **Verification** — all green:
+    - `npm run bundle` → 3 outputs ✓
+    - `npm test` → 32/32 pass ✓
+    - Install smoke test → `~/.claude/plugins/cache/mib200/choreo/1.0.0/` ✓
+    - `check-all` → claude 2.1.117, codex 0.122.0, opencode 1.14.20 all available ✓
+    - Graph rebuilt: 20 files, 117 nodes, 761 edges, 6 communities ✓
 
 ## Current File State
 
-- **Modified:** `README.md`, `docs/delegation.md`, `docs/codebase-summary.md`, `docs/project-overview-pdr.md`, `llms/context/session-summary.md`
-- **Branch ahead of main:** 3 commits. No remote.
+- **Working tree:** clean
+- **Branch:** feature/monorepo-restructure, 5 commits ahead of main
 
-## Pending TODOs
+## Next Steps
 
-- [ ] **Chunk 10** — Verify: `npm run bundle`, `npm test`, install flows, e2e smoke tests
-- [ ] **Merge to main** + tag v1.0.0
+- **Merge to main**: `git checkout main && git merge feature/monorepo-restructure`
+- **Tag**: `git tag v1.0.0`
+- **Install**: `node bin/install.mjs --target=all` (all 3 agents available)
+- **Test Claude plugin**: `/plugin marketplace add /path/to/choreographer` then `/plugin install choreo@mib200`
 
-## Open Bugs / Concerns
+## Open Items (not blocking merge)
 
-- **Single-agent commands all call `council`** — MVP, documented in non-goals.
-- **No git remote configured** — local only.
-
-## Recap for Chunk 10
-
-Verification steps:
-1. `npm run bundle` → 3 outputs (plugin-claude/scripts/, plugin-codex/scripts/, plugin-opencode/dist/)
-2. `npm test` → 32 pass
-3. `node bin/install.mjs --target=claude` → `~/.claude/plugins/cache/mib200/choreo/1.0.0/` exists
-4. `node core/companion.mjs check-all` → reports agent status
-5. `node core/companion.mjs council --json "2+2"` → valid JSON (needs ≥2 agents installed)
-6. Rebuild graph: run `/graphify` or update graph via code-review-graph MCP
-7. Commit all staged changes (docs + summary) in one clean commit
+- Single-agent commands (`/choreo:claude`, `/choreo:codex`, `/choreo:opencode`) all route through `council` (all available agents). No single-agent dispatch yet.
+- OpenCode companion path in commands uses `$HOME/.config/opencode/choreo/companion.mjs` — requires install step to work (not runnable in-place from repo).
+- No git remote configured — push requires manual remote setup.
+- `@mib200/choreo-opencode` npm package not published.
