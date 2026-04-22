@@ -1,6 +1,6 @@
 {
   "name": "llms-choreographer",
-  "owner": { "name": "valpere" },
+  "owner": { "name": "Manish Kumar" },
   "metadata": {
     "description": "Claude Code plugins for AI coding agents: OpenCode, Gemini, Claude, Codex, Cursor, Kilo",
     "version": "1.0.0"
@@ -10,49 +10,49 @@
       "name": "opencode",
       "description": "Delegate tasks and code reviews to OpenCode from Claude Code.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/opencode"
     },
     {
       "name": "gemini",
       "description": "Delegate tasks and code reviews to Gemini CLI from Claude Code.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/gemini"
     },
     {
       "name": "claude",
       "description": "Delegate tasks and code reviews to a second Claude Code instance.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/claude"
     },
     {
       "name": "codex",
       "description": "Delegate tasks and code reviews to Codex from Claude Code.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/codex"
     },
     {
       "name": "cursor",
       "description": "Delegate tasks and code reviews to Cursor Agent CLI from Claude Code.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/cursor"
     },
     {
       "name": "kilo",
       "description": "Delegate tasks and code reviews to Kilo Code CLI from Claude Code.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/kilo"
     },
     {
       "name": "llms-choreographer",
       "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion.",
       "version": "1.0.0",
-      "author": { "name": "valpere" },
+      "author": { "name": "Manish Kumar" },
       "source": "./plugins/llms-choreographer"
     }
   ]
