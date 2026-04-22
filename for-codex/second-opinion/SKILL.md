@@ -14,16 +14,17 @@ description: Quick independent second opinion from Claude or OpenCode on a decis
 
 ```bash
 # Ask Claude (default — depth, correctness, edge cases)
-PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
-claude --print $PLUGIN_ARGS "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
+PARSE_CLAUDE='const c=[]; process.stdin.on("data",d=>c.push(d)); process.stdin.on("end",()=>{ process.stdout.write(Buffer.concat(c).toString().split("\n").filter(Boolean).flatMap(l=>{try{const d=JSON.parse(l);return d.type==="assistant"?(d.message?.content??[]).filter(x=>x.type==="text").map(x=>x.text):[];}catch{return[];}}).join("")); })'
+claude --print --output-format stream-json --verbose "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions | node -e "$PARSE_CLAUDE"
 
 # Or ask OpenCode (integration — does this fit the codebase?)
-opencode run "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --format json --dangerously-skip-permissions
+opencode run "Give a concise second opinion. Be direct: agree / concerns / verdict (approve / approve-with-caveats / reject).\n\n<approach>" --dangerously-skip-permissions
 ```
 
 **Graceful degradation:** If the requested agent is not installed (`command -v <binary>` fails), fall back to the next available one and tell the user which agent you used instead.
 
-**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
+**Claude output:** the node pipe extracts assistant text from stream-json events.
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 

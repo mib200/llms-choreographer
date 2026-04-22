@@ -19,11 +19,11 @@ You generate hypotheses focused on **edge cases in input handling, type coercion
 ```bash
 SYMPTOM="<symptom>"
 
-PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
-claude --print $PLUGIN_ARGS "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
+PARSE_CLAUDE='const c=[]; process.stdin.on("data",d=>c.push(d)); process.stdin.on("end",()=>{ process.stdout.write(Buffer.concat(c).toString().split("\n").filter(Boolean).flatMap(l=>{try{const d=JSON.parse(l);return d.type==="assistant"?(d.message?.content??[]).filter(x=>x.type==="text").map(x=>x.text):[];}catch{return[];}}).join("")); })'
+claude --print --output-format stream-json --verbose "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions | node -e "$PARSE_CLAUDE" &
 CLAUDE_PID=$!
 
-opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --format json --dangerously-skip-permissions &
+opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
 OPENCODE_PID=$!
 
 wait $CLAUDE_PID $OPENCODE_PID
@@ -31,7 +31,7 @@ wait $CLAUDE_PID $OPENCODE_PID
 
 **Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
 
-**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 

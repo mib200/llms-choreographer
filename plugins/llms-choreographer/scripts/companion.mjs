@@ -56,6 +56,23 @@ export function stripFlags(args) {
   return result;
 }
 
+/** Parse claude --output-format stream-json --verbose output, extract assistant text. */
+export function parseClaudeStreamJson(raw) {
+  const text = raw.split('\n')
+    .filter(l => l.trim())
+    .flatMap(l => {
+      try {
+        const d = JSON.parse(l);
+        if (d.type !== 'assistant') return [];
+        return (d.message?.content ?? [])
+          .filter(c => c.type === 'text')
+          .map(c => c.text);
+      } catch { return []; }
+    })
+    .join('');
+  return text.trim() || raw.trim();
+}
+
 /** Strip ANSI escape codes and OpenCode progress lines, return clean text. */
 export function parseOpenCodeOutput(raw) {
   return raw
@@ -154,11 +171,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       {
         name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print',
+        args: ['--print', '--output-format', 'stream-json', '--verbose',
           `You are the CORRECTNESS reviewer in an LLM council.\n` +
           `Focus on: logic errors, type safety, off-by-one bugs, unhandled edge cases, security issues.\n` +
           `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--dangerously-skip-permissions']
+          '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson
       },
       {
         name: 'codex', binary: REGISTRY.codex.binary,
@@ -198,11 +216,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       {
         name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print',
+        args: ['--print', '--output-format', 'stream-json', '--verbose',
           `Review the following code changes for CORRECTNESS AND SECURITY.\n` +
           `Focus on: bugs, logic errors, security vulnerabilities, unsafe patterns.\n` +
           `Be concise — numbered findings.\n\n${diff}`,
-          '--dangerously-skip-permissions']
+          '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson
       },
       {
         name: 'codex', binary: REGISTRY.codex.binary,
@@ -242,7 +261,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'] },
+        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt('edge cases in input handling, off-by-one errors, type coercion')] },
       { name: 'opencode', binary: REGISTRY.opencode.binary,
@@ -278,7 +298,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `${task}`;
 
     const agentDefs = {
-      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', prompt, '--dangerously-skip-permissions']) },
+      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'], parseClaudeStreamJson) },
       codex:    { binary: REGISTRY.codex.binary,    run: () => runAgent('codex',    REGISTRY.codex.binary,    ['exec', prompt]) },
       opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent('opencode', REGISTRY.opencode.binary, ['run', prompt, '--dangerously-skip-permissions'], parseOpenCodeOutput) },
     };
@@ -333,7 +353,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', prompt, '--dangerously-skip-permissions'] },
+        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'],
+        parse: parseClaudeStreamJson },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt] },
       { name: 'opencode', binary: REGISTRY.opencode.binary,

@@ -27,11 +27,11 @@ You are the **SCOPE reviewer**. Focus on: unnecessary complexity, premature abst
 Spawn both agents in parallel, then add your own scope review:
 
 ```bash
-PLUGIN_ARGS=$(sh "$HOME/.codex/skills/_shared/claude-print-args.sh" 2>/dev/null || true)
-claude --print $PLUGIN_ARGS "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
+PARSE_CLAUDE='const c=[]; process.stdin.on("data",d=>c.push(d)); process.stdin.on("end",()=>{ process.stdout.write(Buffer.concat(c).toString().split("\n").filter(Boolean).flatMap(l=>{try{const d=JSON.parse(l);return d.type==="assistant"?(d.message?.content??[]).filter(x=>x.type==="text").map(x=>x.text):[];}catch{return[];}}).join("")); })'
+claude --print --output-format stream-json --verbose "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions | node -e "$PARSE_CLAUDE" &
 CLAUDE_PID=$!
 
-opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --format json --dangerously-skip-permissions &
+opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
 OPENCODE_PID=$!
 
 wait $CLAUDE_PID $OPENCODE_PID
@@ -39,7 +39,7 @@ wait $CLAUDE_PID $OPENCODE_PID
 
 **Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
 
-**OpenCode output:** pipe stdout through an ndJSON parser — extract `type === "assistant"` events and concatenate `message.content[].text` blocks.
+**OpenCode output:** strip ANSI escape codes from stdout and return the plain text verbatim.
 
 ## Output handling
 
