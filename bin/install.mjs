@@ -5,7 +5,7 @@
 //   node bin/install.mjs --target=codex
 //   node bin/install.mjs --target=opencode
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,7 @@ function installOpenCode() {
   const distDir = join(homedir(), '.config', 'opencode', 'choreo');
   const srcCmds = join(REPO_DIR, 'plugin-opencode', '.opencode', 'commands');
   const srcBundle = join(REPO_DIR, 'plugin-opencode', 'dist', 'companion.mjs');
+  const installedBundle = join(distDir, 'companion.mjs');
 
   if (!existsSync(srcBundle)) {
     console.error(`✗ dist/companion.mjs not found. Run "npm run bundle" before installing.`);
@@ -68,14 +69,24 @@ function installOpenCode() {
   mkdirSync(cmdDir, { recursive: true });
   mkdirSync(distDir, { recursive: true });
 
+  const copied = [];
   try {
     for (const f of readdirSync(srcCmds).filter(n => n.startsWith('choreo-') && n.endsWith('.md'))) {
-      cpSync(join(srcCmds, f), join(cmdDir, f));
+      const src = join(srcCmds, f);
+      const dst = join(cmdDir, f);
+      // B-04: Rewrite relative bundle path to absolute install path
+      const body = readFileSync(src, 'utf8')
+        .replace(/\$\(dirname\s+"\$0"\)\/\.\.\/\.\.\/dist\/companion\.mjs/g, installedBundle);
+      writeFileSync(dst, body);
+      copied.push(dst);
     }
-    cpSync(srcBundle, join(distDir, 'companion.mjs'));
+    cpSync(srcBundle, installedBundle);
+    copied.push(installedBundle);
   } catch (e) {
     console.error(`✗ OpenCode install failed: ${e.message}`);
     console.error(`  Cleaning up partial install...`);
+    // B-08: Remove each file we copied; don't rm shared cmdDir
+    for (const p of copied) { try { rmSync(p, { force: true }); } catch {} }
     rmSync(distDir, { recursive: true, force: true });
     process.exit(1);
   }

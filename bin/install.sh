@@ -88,15 +88,25 @@ install_codex() {
 
 install_opencode() {
   local cmd_dir="$HOME/.config/opencode/commands"
-  echo "Installing OpenCode commands → $cmd_dir"
-  mkdir -p "$cmd_dir"
-  for f in "$REPO_DIR/plugin-opencode/.opencode/commands"/choreo-*.md; do
-    cp "$f" "$cmd_dir/"
-  done
-  # Copy bundled companion so commands can resolve it
   local dist_dir="$HOME/.config/opencode/choreo"
-  mkdir -p "$dist_dir"
-  cp "$REPO_DIR/plugin-opencode/dist/companion.mjs" "$dist_dir/companion.mjs"
+  local src_bundle="$REPO_DIR/plugin-opencode/dist/companion.mjs"
+  local installed_bundle="$dist_dir/companion.mjs"
+
+  # B-02: bundle-exists guard
+  if [[ ! -f "$src_bundle" ]]; then
+    echo "Error: $src_bundle not found. Run 'npm run bundle' in the repo first." >&2
+    exit 1
+  fi
+
+  echo "Installing OpenCode commands → $cmd_dir"
+  mkdir -p "$cmd_dir" "$dist_dir"
+
+  # B-04: rewrite relative path to absolute install path during copy
+  for f in "$REPO_DIR/plugin-opencode/.opencode/commands"/choreo-*.md; do
+    local name="$(basename "$f")"
+    sed "s|\$(dirname \"\$0\")/\.\./\.\./dist/companion\.mjs|${installed_bundle}|g" "$f" > "$cmd_dir/$name"
+  done
+  cp "$src_bundle" "$installed_bundle"
   echo "✓ OpenCode commands installed. Restart OpenCode — /choreo-* commands will appear."
 }
 
