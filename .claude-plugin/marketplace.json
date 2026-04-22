@@ -2,24 +2,10 @@
   "name": "llms-choreographer",
   "owner": { "name": "Manish Kumar" },
   "metadata": {
-    "description": "Claude Code plugins for AI coding agents: OpenCode, Gemini, Claude, Codex, Cursor, Kilo",
+    "description": "Claude Code plugins for AI coding agent delegation: Claude, Codex, OpenCode.",
     "version": "1.0.0"
   },
   "plugins": [
-    {
-      "name": "opencode",
-      "description": "Delegate tasks and code reviews to OpenCode from Claude Code.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/opencode"
-    },
-    {
-      "name": "gemini",
-      "description": "Delegate tasks and code reviews to Gemini CLI from Claude Code.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/gemini"
-    },
     {
       "name": "claude",
       "description": "Delegate tasks and code reviews to a second Claude Code instance.",
@@ -35,22 +21,15 @@
       "source": "./plugins/codex"
     },
     {
-      "name": "cursor",
-      "description": "Delegate tasks and code reviews to Cursor Agent CLI from Claude Code.",
+      "name": "opencode",
+      "description": "Delegate tasks and code reviews to OpenCode from Claude Code.",
       "version": "1.0.0",
       "author": { "name": "Manish Kumar" },
-      "source": "./plugins/cursor"
-    },
-    {
-      "name": "kilo",
-      "description": "Delegate tasks and code reviews to Kilo Code CLI from Claude Code.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/kilo"
+      "source": "./plugins/opencode"
     },
     {
       "name": "llms-choreographer",
-      "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion.",
+      "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion, vote.",
       "version": "1.0.0",
       "author": { "name": "Manish Kumar" },
       "source": "./plugins/llms-choreographer"

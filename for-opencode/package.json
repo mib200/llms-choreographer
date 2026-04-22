@@ -1,10 +1,13 @@
 {
   "name": "llms-choreographer-opencode",
-  "version": "1.1.0",
-  "description": "OpenCode plugin: delegate to Claude, Gemini, Codex, Cursor, or Kilo, or run multi-agent workflows (council, parallel review/debug, second opinion, vote)",
+  "version": "1.2.0",
+  "description": "OpenCode MCP server: delegate to Claude or Codex, or run multi-agent workflows (council, parallel review/debug, second opinion, vote)",
   "type": "module",
   "main": "./src/index.js",
   "exports": "./src/index.js",
+  "bin": {
+    "llms-choreographer-opencode": "./src/index.js"
+  },
   "engines": {
     "node": ">=18.18.0"
   },
@@ -16,11 +19,9 @@
     "mcp",
     "plugin",
     "claude",
-    "gemini",
     "codex",
-    "cursor",
-    "kilo",
-    "vote"
+    "vote",
+    "delegation"
   ],
   "author": "Manish Kumar",
   "license": "MIT"

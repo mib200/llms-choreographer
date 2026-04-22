@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -20,48 +21,6 @@ const TOOLS = [
     }
   },
   {
-    name: 'delegate_gemini',
-    description: 'Delegate a task to Gemini CLI and return its output verbatim',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'The task to delegate to Gemini CLI'
-        }
-      },
-      required: ['task']
-    }
-  },
-  {
-    name: 'delegate_cursor',
-    description: 'Delegate a task to Cursor Agent CLI and return its output verbatim',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'The task to delegate to Cursor Agent CLI'
-        }
-      },
-      required: ['task']
-    }
-  },
-  {
-    name: 'delegate_kilo',
-    description: 'Delegate a task to Kilo Code CLI and return its output verbatim',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'The task to delegate to Kilo Code CLI'
-        }
-      },
-      required: ['task']
-    }
-  },
-  {
     name: 'delegate_codex',
     description: 'Delegate a task to Codex and return its output verbatim',
     inputSchema: {
@@ -77,7 +36,7 @@ const TOOLS = [
   },
   {
     name: 'check_agents',
-    description: 'Report availability of all 5 target CLIs (claude, gemini, codex, cursor, kilo) — mirrors /llms-choreographer check-all',
+    description: 'Report availability of all target CLIs (claude, codex) — mirrors /llms-choreographer check-all',
     inputSchema: {
       type: 'object',
       properties: {}
@@ -85,7 +44,7 @@ const TOOLS = [
   },
   {
     name: 'council',
-    description: 'Run an LLM council: Claude (correctness), Gemini (edge cases), Codex (scope), Cursor (integration), Kilo (maintainability) tackle the same task in parallel. Returns delimited output — the host agent synthesizes.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
+    description: 'Run an LLM council: Claude (correctness) and Codex (scope/simplicity) tackle the same task in parallel. Returns delimited output — the host agent synthesizes.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -103,7 +62,7 @@ const TOOLS = [
   },
   {
     name: 'parallel_review',
-    description: 'Parallel code review of the current git diff: Claude (correctness/security), Gemini (edge cases), Codex (scope/simplicity), Cursor (integration), Kilo (maintainability). Returns delimited output — the host agent synthesizes.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
+    description: 'Parallel code review of the current git diff: Claude (correctness/security) and Codex (scope/simplicity). Returns delimited output — the host agent synthesizes.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -116,7 +75,7 @@ const TOOLS = [
   },
   {
     name: 'parallel_debug',
-    description: 'Parallel root-cause hypotheses from five agents for a given symptom. Returns ranked hypotheses per agent — the host synthesizes an investigation plan.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
+    description: 'Parallel root-cause hypotheses from Claude and Codex for a given symptom. Returns ranked hypotheses per agent — the host synthesizes an investigation plan.\n\nstrict: if true, every agent slot is preserved and missing agents appear as [error: ...]; if false (default), missing agents are filtered out and a "⚠ Skipped: ..." line is prepended.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -134,7 +93,7 @@ const TOOLS = [
   },
   {
     name: 'second_opinion',
-    description: 'Quick independent second opinion from one agent on a decision or approach. Agent gives a verdict: approve / approve-with-caveats / reject.\n\nIf the requested agent is unavailable, automatically falls back to the next available agent in order: gemini → claude → codex → kilo → cursor. A warning line is prepended to the output naming which agent was actually used.',
+    description: 'Quick independent second opinion from one agent on a decision or approach. Agent gives a verdict: approve / approve-with-caveats / reject.\n\nIf the requested agent is unavailable, automatically falls back to the next available agent in order: claude → codex. A warning line is prepended to the output naming which agent was actually used.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -144,8 +103,8 @@ const TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'gemini', 'codex', 'cursor', 'kilo'],
-          description: 'Which agent to consult. Defaults to gemini.'
+          enum: ['claude', 'codex'],
+          description: 'Which agent to consult. Defaults to claude.'
         }
       },
       required: ['approach']
@@ -153,7 +112,7 @@ const TOOLS = [
   },
   {
     name: 'vote',
-    description: 'Put a yes/no proposition to all five agents and tally their votes (YES / NO / ABSTAIN). Returns a tally table and per-agent rationale — simpler than council when you need a decision signal rather than synthesis.',
+    description: 'Put a yes/no proposition to Claude and Codex and tally their votes (YES / NO / ABSTAIN). Returns a tally table and per-agent rationale — simpler than council when you need a decision signal rather than synthesis.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -171,10 +130,7 @@ const TOOLS = [
 
 const BINARIES = {
   claude: 'claude',
-  gemini: 'gemini',
   codex: 'codex',
-  cursor: 'agent',
-  kilo: 'kilo',
 };
 
 function checkCli(binary) {
@@ -237,99 +193,6 @@ async function delegateToClaude(task) {
   });
 }
 
-async function delegateToGemini(task) {
-  const check = checkCli('gemini');
-  if (!check.available) {
-    throw new Error(`Gemini CLI not available: ${check.error}. Please install Gemini CLI.`);
-  }
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn('gemini', ['--prompt', task, '--yolo', '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => { stdout += data.toString(); });
-    proc.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`Gemini exited with code ${code}: ${stderr || stdout}`));
-      } else {
-        resolve(stdout);
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to run Gemini: ${err.message}`));
-    });
-  });
-}
-
-async function delegateToCursor(task) {
-  const check = checkCli('agent');
-  if (!check.available) {
-    throw new Error(`Cursor Agent CLI not available: ${check.error}. Please install Cursor Agent CLI.`);
-  }
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn('agent', ['-p', '--force', task], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => { stdout += data.toString(); });
-    proc.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`Cursor Agent exited with code ${code}: ${stderr || stdout}`));
-      } else {
-        resolve(stdout);
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to run Cursor Agent: ${err.message}`));
-    });
-  });
-}
-
-async function delegateToKilo(task) {
-  const check = checkCli('kilo');
-  if (!check.available) {
-    throw new Error(`Kilo Code CLI not available: ${check.error}. Please install Kilo Code CLI.`);
-  }
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn('kilo', ['run', '--auto', task], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => { stdout += data.toString(); });
-    proc.stderr.on('data', (data) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`Kilo exited with code ${code}: ${stderr || stdout}`));
-      } else {
-        resolve(stdout);
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to run Kilo: ${err.message}`));
-    });
-  });
-}
-
 async function delegateToCodex(task) {
   const check = checkCli('codex');
   if (!check.available) {
@@ -363,10 +226,7 @@ async function delegateToCodex(task) {
 
 const DELEGATE_FNS = {
   claude: delegateToClaude,
-  gemini: delegateToGemini,
   codex: delegateToCodex,
-  cursor: delegateToCursor,
-  kilo: delegateToKilo,
 };
 
 // ── orchestration helpers ─────────────────────────────────────────────────────
@@ -400,7 +260,7 @@ async function runParallelWithDegradation(tasks, strict = false) {
   }
 
   const { available, skipped } = filterAvailable(tasks);
-  if (available.length < 2) {
+  if (available.length < 1) {
     throw new Error(
       `Not enough agents available (need at least 2, got ${available.length}).` +
       (skipped.length ? ` Missing: ${skipped.join(', ')}. Install them to proceed.` : '')
@@ -427,34 +287,10 @@ async function runCouncil(task, strict = false) {
       )
     },
     {
-      name: 'gemini',
-      fn: () => delegateToGemini(
-        `You are the EDGE-CASES reviewer in an LLM council.\n` +
-        `Focus on: unusual inputs, failure modes, race conditions, what was not considered, alternative approaches.\n` +
-        `Be concise — bullet points preferred.\n\nTask: ${task}`
-      )
-    },
-    {
       name: 'codex',
       fn: () => delegateToCodex(
         `You are the SCOPE reviewer in an LLM council.\n` +
         `Focus on: unnecessary complexity, premature abstractions, whether the smallest solution was chosen.\n` +
-        `Be concise — bullet points preferred.\n\nTask: ${task}`
-      )
-    },
-    {
-      name: 'cursor',
-      fn: () => delegateToCursor(
-        `You are the INTEGRATION reviewer in an LLM council.\n` +
-        `Focus on: how this fits with existing codebase patterns, dependency implications, integration risks.\n` +
-        `Be concise — bullet points preferred.\n\nTask: ${task}`
-      )
-    },
-    {
-      name: 'kilo',
-      fn: () => delegateToKilo(
-        `You are the MAINTAINABILITY reviewer in an LLM council.\n` +
-        `Focus on: readability, naming, long-term tech debt, whether this will be easy to change later.\n` +
         `Be concise — bullet points preferred.\n\nTask: ${task}`
       )
     }
@@ -479,34 +315,10 @@ async function runParallelReview(strict = false) {
       )
     },
     {
-      name: 'gemini',
-      fn: () => delegateToGemini(
-        `Review these code changes for EDGE CASES AND ROBUSTNESS.\n` +
-        `Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.\n` +
-        `Be concise — numbered findings.\n\n${diff}`
-      )
-    },
-    {
       name: 'codex',
       fn: () => delegateToCodex(
         `Review these code changes for SCOPE AND SIMPLICITY.\n` +
         `Focus on: unnecessary complexity, changes that exceed the stated goal, simpler alternatives.\n` +
-        `Be concise — numbered findings.\n\n${diff}`
-      )
-    },
-    {
-      name: 'cursor',
-      fn: () => delegateToCursor(
-        `Review these code changes for CODEBASE INTEGRATION.\n` +
-        `Focus on: consistency with existing patterns, dependency risks, integration issues.\n` +
-        `Be concise — numbered findings.\n\n${diff}`
-      )
-    },
-    {
-      name: 'kilo',
-      fn: () => delegateToKilo(
-        `Review these code changes for MAINTAINABILITY.\n` +
-        `Focus on: readability, naming clarity, long-term tech debt introduced.\n` +
         `Be concise — numbered findings.\n\n${diff}`
       )
     }
@@ -520,11 +332,8 @@ async function runParallelDebug(symptom, strict = false) {
     `Focus area: ${focus}.\n` +
     `Format: numbered list, most likely first, one sentence per hypothesis.\n\nSymptom: ${symptom}`;
   const tasks = [
-    { name: 'claude',  fn: () => delegateToClaude(prompt('application logic, state management, data flow')) },
-    { name: 'gemini',  fn: () => delegateToGemini(prompt('infrastructure, concurrency, external dependencies, environment')) },
-    { name: 'codex',   fn: () => delegateToCodex(prompt('edge cases in input handling, type coercion, off-by-one errors')) },
-    { name: 'cursor',  fn: () => delegateToCursor(prompt('framework, library, and third-party integration issues')) },
-    { name: 'kilo',    fn: () => delegateToKilo(prompt('naming, types, readability, and long-term maintainability')) }
+    { name: 'claude', fn: () => delegateToClaude(prompt('application logic, state management, data flow')) },
+    { name: 'codex',  fn: () => delegateToCodex(prompt('edge cases in input handling, type coercion, off-by-one errors')) }
   ];
   return runParallelWithDegradation(tasks, strict);
 }
@@ -537,7 +346,7 @@ async function runSecondOpinion(approach, agent = 'gemini') {
 
   if (!DELEGATE_FNS[agent]) throw new Error(`Unknown agent: ${agent}`);
 
-  const defaultOrder = ['gemini', 'claude', 'codex', 'kilo', 'cursor'];
+  const defaultOrder = ['claude', 'codex'];
   let chosenAgent = agent;
 
   if (!checkCli(BINARIES[chosenAgent]).available) {
@@ -569,15 +378,12 @@ async function runVote(proposition) {
     `followed by one sentence of rationale. No other text.\n\nProposition: ${proposition}`;
 
   const tasks = [
-    { name: 'claude',  fn: () => delegateToClaude(prompt) },
-    { name: 'gemini',  fn: () => delegateToGemini(prompt) },
-    { name: 'codex',   fn: () => delegateToCodex(prompt) },
-    { name: 'cursor',  fn: () => delegateToCursor(prompt) },
-    { name: 'kilo',    fn: () => delegateToKilo(prompt) },
+    { name: 'claude', fn: () => delegateToClaude(prompt) },
+    { name: 'codex',  fn: () => delegateToCodex(prompt) },
   ];
 
   const { available, skipped } = filterAvailable(tasks);
-  if (available.length < 2) {
+  if (available.length < 1) {
     throw new Error(
       `Not enough agents available for a vote (need at least 2, got ${available.length}).` +
       (skipped.length ? ` Missing: ${skipped.join(', ')}.` : '')
@@ -615,7 +421,7 @@ async function runVote(proposition) {
 const server = new Server(
   {
     name: 'llms-choreographer-opencode',
-    version: '1.1.0'
+    version: '1.2.0'
   },
   {
     capabilities: {
@@ -691,7 +497,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case 'second_opinion': {
       const approach = requireString(args.approach, 'approach');
       const supportedAgents = new Set(Object.keys(DELEGATE_FNS));
-      const agent = args.agent ?? 'gemini';
+      const agent = args.agent ?? 'claude';
       if (!supportedAgents.has(agent)) throw new Error(`Invalid agent: ${agent}. Choose from: ${[...supportedAgents].join(', ')}`);
       const results = await runSecondOpinion(approach, agent);
       return { content: [{ type: 'text', text: delimit(results) }] };

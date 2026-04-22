@@ -1,6 +1,6 @@
 ---
 name: llms-choreographer-parallel-debug
-description: Parallel root-cause hypotheses from multiple agents for a reported bug. Use when the user says "parallel debug", "llms-choreographer debug", "multiple hypotheses", or "debug with all agents".
+description: Parallel root-cause hypotheses from Claude and OpenCode for a reported bug. Use when the user says "parallel debug", "llms-choreographer debug", "multiple hypotheses", or "debug with all agents".
 ---
 
 # LLMs Choreographer: Parallel Debug
@@ -22,28 +22,24 @@ SYMPTOM="<symptom>"
 claude --print "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: application logic, state management.\n\nSymptom: $SYMPTOM" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
-gemini --prompt "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --yolo --output-format text &
-GEMINI_PID=$!
+opencode run "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: infrastructure, concurrency, environment.\n\nSymptom: $SYMPTOM" --format json --dangerously-skip-permissions &
+OPENCODE_PID=$!
 
-agent -p --force "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: framework, library, and third-party integration issues.\n\nSymptom: $SYMPTOM" &
-CURSOR_PID=$!
-
-kilo run --auto "Root-cause hypotheses, ranked by likelihood (numbered list). Focus: naming confusion, type misuse, readability issues that hide bugs.\n\nSymptom: $SYMPTOM" &
-KILO_PID=$!
-
-wait $CLAUDE_PID $GEMINI_PID $CURSOR_PID $KILO_PID
+wait $CLAUDE_PID $OPENCODE_PID
 ```
 
-**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 2 agents (including yourself) are available.
+**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
+
+**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
 
 ## Output handling
 
-Merge all available hypothesis lists (up to four agents + your edge-case hypotheses), prioritize ones flagged by multiple agents:
+Merge all available hypothesis lists (agents + your edge-case hypotheses), prioritize ones flagged by multiple agents:
 
 ```
 ## Hypothesis Pool (ranked)
-1. … (Claude + Gemini)
-2. … (Codex)
+1. … (Claude + you)
+2. … (OpenCode)
 
 ## Investigation Plan
 1. Check X first — rules out hypotheses 1 and 3

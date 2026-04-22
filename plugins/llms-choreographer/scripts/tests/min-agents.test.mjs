@@ -6,7 +6,7 @@ for (const subcommand of ['council', 'debug']) {
   test(`${subcommand} exits 1 with only 1 agent available`, () => {
     const fake = createFakeAgents(
       ['claude'],
-      { unavailable: ['gemini', 'codex', 'cursor', 'kilo'] }
+      { unavailable: ['codex', 'opencode'] }
     );
     try {
       const args = subcommand === 'debug' ? [subcommand, 'something broke'] : [subcommand, 'ping'];
@@ -22,7 +22,7 @@ for (const subcommand of ['council', 'debug']) {
   test(`${subcommand} exits 1 with no agents available`, () => {
     const fake = createFakeAgents(
       [],
-      { unavailable: ['claude', 'gemini', 'codex', 'cursor', 'kilo'] }
+      { unavailable: ['claude', 'codex', 'opencode'] }
     );
     try {
       const args = subcommand === 'debug' ? [subcommand, 'something broke'] : [subcommand, 'ping'];

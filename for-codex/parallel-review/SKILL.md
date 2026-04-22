@@ -1,6 +1,6 @@
 ---
 name: llms-choreographer-parallel-review
-description: Parallel code review of the current git diff from multiple agents — Claude (correctness/security), Gemini (edge cases), Cursor (integration), Kilo (maintainability), and you (scope/simplicity). Use when the user says "parallel review", "review with all agents", or "llms-choreographer review".
+description: Parallel code review of the current git diff from Claude (correctness/security), OpenCode (edge cases), and you (scope/simplicity). Use when the user says "parallel review", "review with all agents", or "llms-choreographer review".
 ---
 
 # LLMs Choreographer: Parallel Code Review
@@ -22,23 +22,19 @@ git diff HEAD > /tmp/llms-choreographer-diff.txt
 claude --print "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
-gemini --prompt "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --yolo --output-format text &
-GEMINI_PID=$!
+opencode run "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" --format json --dangerously-skip-permissions &
+OPENCODE_PID=$!
 
-agent -p --force "Review for CODEBASE INTEGRATION. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" &
-CURSOR_PID=$!
-
-kilo run --auto "Review for MAINTAINABILITY. Numbered findings.\n\n$(cat /tmp/llms-choreographer-diff.txt)" &
-KILO_PID=$!
-
-wait $CLAUDE_PID $GEMINI_PID $CURSOR_PID $KILO_PID
+wait $CLAUDE_PID $OPENCODE_PID
 ```
 
-**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 2 agents (including yourself) are available.
+**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
+
+**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
 
 ## Output handling
 
-Synthesize all available reviews (up to four agents + your scope review):
+Synthesize all available reviews (up to two agents + your scope review):
 
 ```
 ## Parallel Review Summary

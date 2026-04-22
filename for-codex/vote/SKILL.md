@@ -1,6 +1,6 @@
 ---
 name: llms-choreographer-vote
-description: Put a yes/no proposition to five agents and tally YES / NO / ABSTAIN votes when the user wants a quick decision signal.
+description: Put a yes/no proposition to Claude and OpenCode then tally YES / NO / ABSTAIN votes when the user wants a quick decision signal.
 ---
 
 # LLMs Choreographer: Parallel Vote
@@ -18,27 +18,21 @@ You are the **SCOPE voter**. Your vote should reflect whether the proposition is
 
 ## Invocation
 
-Spawn four agents in parallel, then cast your own vote:
+Spawn two agents in parallel, then cast your own vote:
 
 ```bash
-# Step 1: spawn four agents in parallel
 claude --print "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
-gemini --prompt "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --yolo --output-format text &
-GEMINI_PID=$!
+opencode run "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" --format json --dangerously-skip-permissions &
+OPENCODE_PID=$!
 
-agent -p --force "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" &
-CURSOR_PID=$!
-
-kilo run --auto "Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.\n\nProposition: <proposition>" &
-KILO_PID=$!
-
-# Step 2: wait for all
-wait $CLAUDE_PID $GEMINI_PID $CURSOR_PID $KILO_PID
+wait $CLAUDE_PID $OPENCODE_PID
 ```
 
-**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 2 agents (including yourself) are available.
+**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
+
+**OpenCode output:** extract assistant text from ndJSON stream (`type === "assistant"`, `message.content[].type === "text"`).
 
 ## Casting your vote
 
@@ -62,9 +56,7 @@ YES|NO|ABSTAIN — one sentence rationale from scope perspective.
 ## Per-Agent Rationale
 
 **Claude:** YES — ...
-**Gemini:** NO — ...
-**Cursor:** ABSTAIN — ...
-**Kilo:** YES — ...
+**OpenCode:** NO — ...
 **(you):** YES — ...
 ```
 

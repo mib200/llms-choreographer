@@ -16,14 +16,16 @@ This skill delegates tasks to OpenCode when the user asks for a second opinion o
 
 ## Invocation
 
-Run OpenCode non-interactively:
+Run OpenCode non-interactively and capture the response:
 
 ```bash
-opencode run "<task>"
+opencode run "<task>" --format json --dangerously-skip-permissions
 ```
 
-The `run` command executes the task in non-interactive mode.
+`--format json` emits ndJSON events on stdout. Extract the final assistant message from events where `type === "assistant"` and `message.content[].type === "text"`.
+
+Set `OPENCODE_SERVER_URL=http://localhost:4096` before running to reuse a warm `opencode serve` instance instead of cold-starting a new one.
 
 ## Output handling
 
-Return OpenCode's output verbatim — no paraphrasing, no summaries.
+Return OpenCode's final assistant text verbatim — no paraphrasing, no summaries.

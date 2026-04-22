@@ -4,11 +4,9 @@ import { fileURLToPath } from 'node:url';
 // ── agent registry ────────────────────────────────────────────────────────────
 
 export const REGISTRY = {
-  claude: { binary: 'claude', setup: '/claude:setup' },
-  gemini: { binary: 'gemini', setup: '/gemini:setup' },
-  codex:  { binary: 'codex',  setup: '/codex:setup'  },
-  cursor: { binary: 'agent',  setup: '/cursor:setup'  },
-  kilo:   { binary: 'kilo',   setup: '/kilo:setup'    },
+  claude:    { binary: 'claude',   setup: '/claude:setup'    },
+  codex:     { binary: 'codex',    setup: '/codex:setup'     },
+  opencode:  { binary: 'opencode', setup: '/opencode:setup'  },
 };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -58,7 +56,24 @@ export function stripFlags(args) {
   return result;
 }
 
-export function runAgent(name, binary, args) {
+/** Parse OpenCode --format json ndJSON stream, extract final assistant text. */
+export function parseOpenCodeNdJson(raw) {
+  const lines = raw.split('\n').filter(l => l.trim());
+  const messages = [];
+  for (const line of lines) {
+    try {
+      const obj = JSON.parse(line);
+      if (obj.type === 'assistant' && obj.message?.content) {
+        for (const block of obj.message.content) {
+          if (block.type === 'text') messages.push(block.text);
+        }
+      }
+    } catch { /* non-JSON progress lines */ }
+  }
+  return messages.length > 0 ? messages.join('\n').trim() : raw.trim();
+}
+
+export function runAgent(name, binary, args, parse = s => s) {
   return new Promise(resolve => {
     const out = [];
     const err = [];
@@ -67,7 +82,7 @@ export function runAgent(name, binary, args) {
     proc.stderr.on('data', d => err.push(d));
     proc.on('close', (code, signal) => resolve({
       name,
-      output: Buffer.concat(out).toString().trim(),
+      output: parse(Buffer.concat(out).toString()).trim(),
       error:  Buffer.concat(err).toString().trim(),
       code:   code ?? (signal ? 1 : 0)
     }));
@@ -153,14 +168,6 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           '--dangerously-skip-permissions']
       },
       {
-        name: 'gemini', binary: REGISTRY.gemini.binary,
-        args: ['--prompt',
-          `You are the EDGE-CASES reviewer in an LLM council.\n` +
-          `Focus on: unusual inputs, failure modes, race conditions, what was not considered, alternative approaches.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--yolo', '--output-format', 'text']
-      },
-      {
         name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec',
           `You are the SCOPE reviewer in an LLM council.\n` +
@@ -168,23 +175,18 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           `Be concise — bullet points preferred.\n\nTask: ${task}`]
       },
       {
-        name: 'cursor', binary: REGISTRY.cursor.binary,
-        args: ['-p', '--force',
+        name: 'opencode', binary: REGISTRY.opencode.binary,
+        args: ['run',
           `You are the INTEGRATION reviewer in an LLM council.\n` +
           `Focus on: how this fits with existing codebase patterns, dependency implications, integration risks.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`]
-      },
-      {
-        name: 'kilo', binary: REGISTRY.kilo.binary,
-        args: ['run', '--auto',
-          `You are the MAINTAINABILITY reviewer in an LLM council.\n` +
-          `Focus on: readability, naming, long-term tech debt, whether this will be easy to change later.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`]
+          `Be concise — bullet points preferred.\n\nTask: ${task}`,
+          '--format', 'json', '--dangerously-skip-permissions'],
+        parse: parseOpenCodeNdJson
       }
     ];
 
     const available = requireAvailable(agents, 2);
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args)));
+    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('council', results) : printDelimited(results);
   }
 
@@ -210,14 +212,6 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           '--dangerously-skip-permissions']
       },
       {
-        name: 'gemini', binary: REGISTRY.gemini.binary,
-        args: ['--prompt',
-          `Review the following code changes for EDGE CASES AND ROBUSTNESS.\n` +
-          `Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.\n` +
-          `Be concise — numbered findings.\n\n${diff}`,
-          '--yolo', '--output-format', 'text']
-      },
-      {
         name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec',
           `Review the following code changes for SCOPE AND SIMPLICITY.\n` +
@@ -225,23 +219,18 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           `Be concise — numbered findings.\n\n${diff}`]
       },
       {
-        name: 'cursor', binary: REGISTRY.cursor.binary,
-        args: ['-p', '--force',
-          `Review the following code changes for CODEBASE INTEGRATION.\n` +
-          `Focus on: consistency with existing patterns, dependency risks, integration issues.\n` +
-          `Be concise — numbered findings.\n\n${diff}`]
-      },
-      {
-        name: 'kilo', binary: REGISTRY.kilo.binary,
-        args: ['run', '--auto',
-          `Review the following code changes for MAINTAINABILITY.\n` +
-          `Focus on: readability, naming clarity, long-term tech debt introduced.\n` +
-          `Be concise — numbered findings.\n\n${diff}`]
+        name: 'opencode', binary: REGISTRY.opencode.binary,
+        args: ['run',
+          `Review the following code changes for EDGE CASES AND ROBUSTNESS.\n` +
+          `Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.\n` +
+          `Be concise — numbered findings.\n\n${diff}`,
+          '--format', 'json', '--dangerously-skip-permissions'],
+        parse: parseOpenCodeNdJson
       }
     ];
 
     const available = requireAvailable(agents, 2);
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args)));
+    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('review', results) : printDelimited(results);
   }
 
@@ -261,18 +250,16 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
         args: ['--print', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'] },
-      { name: 'gemini', binary: REGISTRY.gemini.binary,
-        args: ['--prompt', prompt('infrastructure, concurrency, external dependencies, environment'), '--yolo', '--output-format', 'text'] },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt('edge cases in input handling, off-by-one errors, type coercion')] },
-      { name: 'cursor', binary: REGISTRY.cursor.binary,
-        args: ['-p', '--force', prompt('framework, library, and third-party integration issues')] },
-      { name: 'kilo', binary: REGISTRY.kilo.binary,
-        args: ['run', '--auto', prompt('naming, types, readability, and long-term maintainability')] }
+      { name: 'opencode', binary: REGISTRY.opencode.binary,
+        args: ['run', prompt('infrastructure, concurrency, external dependencies, environment'),
+          '--format', 'json', '--dangerously-skip-permissions'],
+        parse: parseOpenCodeNdJson }
     ];
 
     const available = requireAvailable(agents, 2);
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args)));
+    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
     jsonMode ? printJSON('debug', results) : printDelimited(results);
   }
 
@@ -288,7 +275,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const task = stripFlags(rest).join(' ').trim();
     if (!task) {
-      console.error('Usage: companion.mjs second-opinion [--agent claude|gemini|codex|cursor|kilo] <decision or approach>');
+      console.error('Usage: companion.mjs second-opinion [--agent claude|codex|opencode] <decision or approach>');
       process.exit(1);
     }
 
@@ -298,11 +285,9 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `${task}`;
 
     const agentDefs = {
-      claude: { binary: REGISTRY.claude.binary, run: () => runAgent('claude', REGISTRY.claude.binary, ['--print', prompt, '--dangerously-skip-permissions']) },
-      gemini: { binary: REGISTRY.gemini.binary, run: () => runAgent('gemini', REGISTRY.gemini.binary, ['--prompt', prompt, '--yolo', '--output-format', 'text']) },
-      codex:  { binary: REGISTRY.codex.binary,  run: () => runAgent('codex',  REGISTRY.codex.binary,  ['exec', prompt]) },
-      cursor: { binary: REGISTRY.cursor.binary, run: () => runAgent('cursor', REGISTRY.cursor.binary, ['-p', '--force', prompt]) },
-      kilo:   { binary: REGISTRY.kilo.binary,   run: () => runAgent('kilo',   REGISTRY.kilo.binary,   ['run', '--auto', prompt]) },
+      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', prompt, '--dangerously-skip-permissions']) },
+      codex:    { binary: REGISTRY.codex.binary,    run: () => runAgent('codex',    REGISTRY.codex.binary,    ['exec', prompt]) },
+      opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent('opencode', REGISTRY.opencode.binary, ['run', prompt, '--format', 'json', '--dangerously-skip-permissions'], parseOpenCodeNdJson) },
     };
 
     if (requestedAgent && !agentDefs[requestedAgent]) {
@@ -310,8 +295,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       process.exit(1);
     }
 
-    const defaultOrder = ['gemini', 'claude', 'codex', 'kilo', 'cursor'];
-    let chosenAgent = requestedAgent ?? 'gemini';
+    const defaultOrder = ['claude', 'codex', 'opencode'];
+    let chosenAgent = requestedAgent ?? 'claude';
 
     if (checkCli(agentDefs[chosenAgent].binary).status !== 'ok') {
       const fallback = (requestedAgent ? Object.keys(agentDefs) : defaultOrder)
@@ -356,18 +341,15 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const agents = [
       { name: 'claude', binary: REGISTRY.claude.binary,
         args: ['--print', prompt, '--dangerously-skip-permissions'] },
-      { name: 'gemini', binary: REGISTRY.gemini.binary,
-        args: ['--prompt', prompt, '--yolo', '--output-format', 'text'] },
       { name: 'codex', binary: REGISTRY.codex.binary,
         args: ['exec', prompt] },
-      { name: 'cursor', binary: REGISTRY.cursor.binary,
-        args: ['-p', '--force', prompt] },
-      { name: 'kilo', binary: REGISTRY.kilo.binary,
-        args: ['run', '--auto', prompt] }
+      { name: 'opencode', binary: REGISTRY.opencode.binary,
+        args: ['run', prompt, '--format', 'json', '--dangerously-skip-permissions'],
+        parse: parseOpenCodeNdJson }
     ];
 
     const available = requireAvailable(agents, 2);
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args)));
+    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
 
     function parseVote(text) {
       const line = (text || '').split('\n').find(l => l.trim().length > 0) || '';
@@ -411,6 +393,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   }
 
   const known = ['check-all', 'council', 'review', 'debug', 'second-opinion', 'vote'];
+
   if (!cmd || !known.includes(cmd)) {
     if (cmd) console.error(`Unknown command: "${cmd}"`);
     console.error('Usage: companion.mjs <check-all|council|review|debug|second-opinion|vote> [args...]');

@@ -8,7 +8,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "test": "echo \"Running tests...\" && exit 0"
+    "test": "node --test 'plugins/llms-choreographer/scripts/tests/*.test.mjs' && node --test 'for-opencode/src/tests/*.test.mjs'"
   },
   "volta": {
     "node": "24.15.0"

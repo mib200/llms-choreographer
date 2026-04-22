@@ -2,7 +2,9 @@
   "name": "codex",
   "version": "1.0.0",
   "description": "Delegate tasks and code reviews to Codex from Claude Code.",
-  "author": {
-    "name": "Manish Kumar"
-  }
+  "author": { "name": "Manish Kumar" },
+  "license": "MIT",
+  "keywords": ["delegation", "codex", "ai-coding"],
+  "repository": "https://github.com/valpere/llms-choreographer",
+  "category": "delegation"
 }

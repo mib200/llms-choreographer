@@ -1,6 +1,6 @@
 ---
 name: llms-choreographer-council
-description: Run an LLM council — Claude (correctness), Gemini (edge cases), Cursor (integration), Kilo (maintainability), and you (scope) tackle the same task in parallel. Use when the user wants multiple independent perspectives on a decision, approach, or problem.
+description: Run an LLM council — Claude (correctness), OpenCode (integration), and you (scope) tackle the same task in parallel. Use when the user wants multiple independent perspectives on a decision, approach, or problem.
 ---
 
 # LLMs Choreographer: LLM Council
@@ -19,36 +19,30 @@ You are the **SCOPE reviewer**. Focus on: unnecessary complexity, premature abst
 | Agent | Focus |
 |-------|-------|
 | Claude | Correctness — logic errors, type safety, security issues |
-| Gemini | Edge cases — unusual inputs, failure modes, alternatives |
-| Cursor | Integration — codebase fit, patterns, dependency risks |
-| Kilo | Maintainability — readability, naming, long-term tech debt |
+| OpenCode | Integration — codebase fit, patterns, dependency risks |
 | (you) | Scope — unnecessary complexity, smallest viable solution |
 
 ## Invocation
 
-Spawn all four agents in parallel, then add your own scope review:
+Spawn both agents in parallel, then add your own scope review:
 
 ```bash
 claude --print "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &
 CLAUDE_PID=$!
 
-gemini --prompt "You are the EDGE-CASES reviewer in an LLM council. Focus on: unusual inputs, failure modes, alternatives not considered. Be concise — bullet points.\n\nTask: <task>" --yolo --output-format text &
-GEMINI_PID=$!
+opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --format json --dangerously-skip-permissions &
+OPENCODE_PID=$!
 
-agent -p --force "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" &
-CURSOR_PID=$!
-
-kilo run --auto "You are the MAINTAINABILITY reviewer in an LLM council. Focus on: readability, naming clarity, long-term tech debt. Be concise — bullet points.\n\nTask: <task>" &
-KILO_PID=$!
-
-wait $CLAUDE_PID $GEMINI_PID $CURSOR_PID $KILO_PID
+wait $CLAUDE_PID $OPENCODE_PID
 ```
 
-**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 2 agents (including yourself) are available.
+**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 1 external agent is available.
+
+**OpenCode output:** pipe stdout through an ndJSON parser — extract `type === "assistant"` events and concatenate `message.content[].text` blocks.
 
 ## Output handling
 
-After collecting outputs (fewer if some agents were skipped) plus your own scope review, synthesize as chairman:
+After collecting outputs plus your own scope review, synthesize as chairman:
 
 1. **Consensus** — points all agents agree on
 2. **Disagreements** — flag and adjudicate

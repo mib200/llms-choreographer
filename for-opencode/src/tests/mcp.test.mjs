@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeAgents, createMcpSession, callTool } from './helpers/mcp-session.mjs';
 
-const ALL_AGENTS = ['claude', 'gemini', 'codex', 'cursor', 'kilo'];
+const ALL_AGENTS = ['claude', 'codex'];
 
 // ── tools/list ────────────────────────────────────────────────────────────────
 
@@ -13,10 +13,14 @@ test('tools/list returns all expected tools', async () => {
     const result = await session.send('tools/list', {});
     const names = result.tools.map(t => t.name);
     for (const expected of [
-      'delegate_claude', 'delegate_gemini', 'delegate_codex', 'delegate_cursor', 'delegate_kilo',
+      'delegate_claude', 'delegate_codex',
       'check_agents', 'council', 'parallel_review', 'parallel_debug', 'second_opinion', 'vote',
     ]) {
       assert.ok(names.includes(expected), `missing tool: ${expected}`);
+    }
+    // Removed tools must not appear
+    for (const removed of ['delegate_gemini', 'delegate_cursor', 'delegate_kilo']) {
+      assert.ok(!names.includes(removed), `stale tool still present: ${removed}`);
     }
   } finally {
     await session.close();
@@ -32,8 +36,7 @@ test('check_agents returns a table with all agent statuses', async () => {
   try {
     const text = await callTool(session, 'check_agents');
     assert.match(text, /claude/);
-    assert.match(text, /gemini/);
-    assert.match(text, /kilo/);
+    assert.match(text, /codex/);
     assert.match(text, /✓/);
   } finally {
     await session.close();
@@ -45,15 +48,14 @@ test('check_agents returns a table with all agent statuses', async () => {
 
 test('council (strict=false) skips unavailable agents and prepends warning', async () => {
   const fake = createFakeAgents(
-    ['claude', 'gemini'],
-    { unavailable: ['codex', 'cursor', 'kilo'] }
+    ['claude'],
+    { unavailable: ['codex'] }
   );
   const session = await createMcpSession({ path: fake.path });
   try {
     const text = await callTool(session, 'council', { task: 'ping' });
     assert.match(text, /⚠ Skipped:/);
     assert.match(text, /AGENT: CLAUDE/);
-    assert.match(text, /AGENT: GEMINI/);
   } finally {
     await session.close();
     fake.cleanup();
@@ -62,34 +64,15 @@ test('council (strict=false) skips unavailable agents and prepends warning', asy
 
 test('council strict=true includes all agents even if some fail', async () => {
   const fake = createFakeAgents(
-    ['claude', 'gemini'],
-    { unavailable: ['codex', 'cursor', 'kilo'] }
+    ['claude'],
+    { unavailable: ['codex'] }
   );
   const session = await createMcpSession({ path: fake.path });
   try {
     const text = await callTool(session, 'council', { task: 'ping', strict: true });
-    // All 5 agent slots should be present in strict mode
     assert.match(text, /AGENT: CLAUDE/);
     assert.match(text, /AGENT: CODEX/);
-    // No skipped header in strict mode
     assert.ok(!text.includes('⚠ Skipped:'), 'strict mode should not prepend skipped warning');
-  } finally {
-    await session.close();
-    fake.cleanup();
-  }
-});
-
-test('council (strict=false) throws when fewer than 2 agents available', async () => {
-  const fake = createFakeAgents(
-    ['claude'],
-    { unavailable: ['gemini', 'codex', 'cursor', 'kilo'] }
-  );
-  const session = await createMcpSession({ path: fake.path });
-  try {
-    await assert.rejects(
-      () => callTool(session, 'council', { task: 'ping' }),
-      /Not enough agents/
-    );
   } finally {
     await session.close();
     fake.cleanup();
@@ -99,12 +82,12 @@ test('council (strict=false) throws when fewer than 2 agents available', async (
 // ── second_opinion fallback ───────────────────────────────────────────────────
 
 test('second_opinion falls back when requested agent is unavailable', async () => {
-  const fake = createFakeAgents(['claude'], { unavailable: ['gemini', 'codex', 'cursor', 'kilo'] });
+  const fake = createFakeAgents(['claude'], { unavailable: ['codex'] });
   const session = await createMcpSession({ path: fake.path });
   try {
-    // default agent is gemini which is unavailable — should fall back to claude
-    const text = await callTool(session, 'second_opinion', { approach: 'use postgres' });
-    assert.match(text, /⚠ Agent "gemini" unavailable/);
+    // default agent is claude — request codex which is unavailable, falls back to claude
+    const text = await callTool(session, 'second_opinion', { approach: 'use postgres', agent: 'codex' });
+    assert.match(text, /⚠ Agent "codex" unavailable/);
     assert.match(text, /AGENT: CLAUDE/);
   } finally {
     await session.close();
@@ -140,9 +123,9 @@ test('vote returns tally table and per-agent rationale', async () => {
 
 test('vote skips unavailable agents and prepends warning', async () => {
   const fake = createFakeAgents(
-    ['claude', 'gemini'],
+    ['claude'],
     {
-      unavailable: ['codex', 'cursor', 'kilo'],
+      unavailable: ['codex'],
       script: (name) => [
         '#!/bin/sh',
         'for arg in "$@"; do',
