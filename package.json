@@ -1,16 +1,21 @@
 {
-  "name": "llms-choreographer",
+  "name": "@mib200/choreographer-monorepo",
   "author": "Manish Kumar",
   "version": "1.0.0",
-  "description": "Choreograph and delegate tasks between Claude Code, OpenCode, Codex and Kilo for sub-agents, peer reviews, second opinions and more",
+  "private": true,
+  "description": "Choreograph and delegate tasks between Claude Code, OpenCode, and Codex for council reviews, second opinions, parallel debug, and voting",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
-    "test": "node --test 'plugins/llms-choreographer/scripts/tests/*.test.mjs'"
+    "test": "node --test 'core/tests/*.test.mjs'",
+    "bundle": "node scripts/bundle.mjs"
   },
   "volta": {
     "node": "24.15.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }
