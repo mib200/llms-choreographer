@@ -27,8 +27,8 @@ You are the **SCOPE reviewer**. Focus on: unnecessary complexity, premature abst
 Spawn both agents in parallel, then add your own scope review:
 
 ```bash
-PARSE_CLAUDE='const c=[]; process.stdin.on("data",d=>c.push(d)); process.stdin.on("end",()=>{ process.stdout.write(Buffer.concat(c).toString().split("\n").filter(Boolean).flatMap(l=>{try{const d=JSON.parse(l);return d.type==="assistant"?(d.message?.content??[]).filter(x=>x.type==="text").map(x=>x.text):[];}catch{return[];}}).join("")); })'
-claude --print --output-format stream-json --verbose "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions | node -e "$PARSE_CLAUDE" &
+claude --print --output-format=stream-json --verbose "You are the CORRECTNESS reviewer in an LLM council. Focus on: logic errors, type safety, off-by-one bugs, security issues. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text' &
 CLAUDE_PID=$!
 
 opencode run "You are the INTEGRATION reviewer in an LLM council. Focus on: codebase fit, consistency with existing patterns, dependency implications. Be concise — bullet points.\n\nTask: <task>" --dangerously-skip-permissions &

@@ -19,11 +19,11 @@ This skill delegates tasks to Claude Code when the user asks for a second opinio
 Run Claude Code non-interactively:
 
 ```bash
-claude --print --output-format stream-json --verbose "<task>" --dangerously-skip-permissions \
-  | node -e "const c=[]; process.stdin.on('data',d=>c.push(d)); process.stdin.on('end',()=>{ const out=Buffer.concat(c).toString().split('\n').filter(Boolean).flatMap(l=>{try{const d=JSON.parse(l);return d.type==='assistant'?(d.message?.content??[]).filter(x=>x.type==='text').map(x=>x.text):[];}catch{return[];}}).join(''); process.stdout.write(out); })"
+claude --print --output-format=stream-json --verbose "<task>" --dangerously-skip-permissions \
+  | jq -r 'select(.type=="assistant" and .message.content[0].type=="text") | .message.content[].text'
 ```
 
-`--output-format stream-json --verbose` emits ndJSON events. The node one-liner extracts `type === "assistant"` events and concatenates `content[].text` blocks. `--dangerously-skip-permissions` is required for automated execution.
+`--output-format=stream-json --verbose` emits ndJSON events. `jq` extracts `type === "assistant"` events and prints `content[].text`. `--dangerously-skip-permissions` is required for automated execution.
 
 ## Output handling
 
