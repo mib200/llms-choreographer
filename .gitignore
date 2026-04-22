@@ -1,2 +1,5 @@
 .env
 node_modules/
+.serena/
+graphify-out/
+code-review-graph/
