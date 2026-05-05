@@ -1,21 +1,31 @@
-import { mkdirSync, appendFileSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const LOG_DIR = join(homedir(), '.choreo', 'logs');
 const MAX_BYTES_PER_DAY = 100 * 1024 * 1024; // 100 MB
 const RETENTION_DAYS = 7;
 
+function logDir() {
+  return process.env.CHOREO_LOG_DIR || join(homedir(), '.choreo', 'logs');
+}
+
 function ensureDir() {
-  if (!existsSync(LOG_DIR)) {
-    mkdirSync(LOG_DIR, { recursive: true });
+  const dir = logDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 
 function todayFile() {
   const today = new Date().toISOString().slice(0, 10);
-  return join(LOG_DIR, `${today}.ndjson`);
+  return join(logDir(), `${today}.ndjson`);
 }
+
+let rotatedThisProcess = false;
+
+process.on('SIGUSR1', () => {
+  try { rotate(); } catch { /* signal handler must not throw */ }
+});
 
 /**
  * Emit a structured event to today's NDJSON log.
@@ -32,14 +42,21 @@ export function emit(event) {
   };
 
   ensureDir();
+
+  // Enforce retention once per process on first emit.
+  if (!rotatedThisProcess) {
+    rotatedThisProcess = true;
+    try { rotate(); } catch { /* retention sweep must not block emit */ }
+  }
+
   const file = todayFile();
 
-  // Rotate if today's file exceeds cap
+  // Rotate today's file to a numbered backup if it exceeds the cap.
   if (existsSync(file)) {
     const st = statSync(file);
     if (st.size >= MAX_BYTES_PER_DAY) {
-      // Truncate and start fresh — old data preserved in prior days' files
-      writeFileSync(file, '', 'utf8');
+      const rotatedName = `${file}.${Date.now()}`;
+      try { renameSync(file, rotatedName); } catch { /* if rename fails, append anyway */ }
     }
   }
 
@@ -51,17 +68,19 @@ export function emit(event) {
  * Call this periodically or on startup.
  */
 export function rotate() {
-  ensureDir();
-  if (!existsSync(LOG_DIR)) return;
+  const dir = logDir();
+  if (!existsSync(dir)) return;
 
   const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  const files = readdirSync(LOG_DIR).filter(f => f.endsWith('.ndjson'));
+  // Cover both base files ("YYYY-MM-DD.ndjson") and rotated backups ("YYYY-MM-DD.ndjson.<epoch>").
+  const files = readdirSync(dir).filter(f => f.includes('.ndjson'));
 
   for (const file of files) {
-    const fullPath = join(LOG_DIR, file);
-    const st = statSync(fullPath);
+    const fullPath = join(dir, file);
+    let st;
+    try { st = statSync(fullPath); } catch { continue; }
     if (st.mtimeMs < cutoff) {
-      unlinkSync(fullPath);
+      try { unlinkSync(fullPath); } catch { /* concurrent rotate race — skip */ }
     }
   }
 }
@@ -77,7 +96,7 @@ export function logPath() {
  * Read all events from a specific log file. Useful for tests.
  */
 export function readEvents(dateStr) {
-  const file = join(LOG_DIR, `${dateStr}.ndjson`);
+  const file = join(logDir(), `${dateStr}.ndjson`);
   if (!existsSync(file)) return [];
   return readFileSync(file, 'utf8')
     .split('\n')

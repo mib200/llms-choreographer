@@ -57,10 +57,12 @@ export function createFakeAgents(names, { unavailable = [], script, tmpBase } = 
 }
 
 /**
- * Spawn companion.mjs with a given set of args, injecting a fake PATH first.
+ * Spawn companion.mjs with a given set of args, injecting a fake PATH first
+ * and an optional CHOREO_LOG_DIR for test isolation.
  */
-export function runCompanion(args, { path }) {
+export function runCompanion(args, { path, logDir } = {}) {
   const env = { ...process.env, PATH: `${path}:${process.env.PATH}` };
+  if (logDir) env.CHOREO_LOG_DIR = logDir;
   const result = spawnSync(
     process.execPath,
     [COMPANION, ...args],

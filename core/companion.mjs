@@ -1,11 +1,23 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { parseClaudeStreamJson, parseOpenCodeOutput } from './parsers.mjs';
 import {
   REGISTRY, checkCli, requireAvailable, runAgent,
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
 import { emit } from './observability.mjs';
+
+// Build a privacy-preserving description of the user's task for structured logs.
+// NDJSON is written to `~/.choreo/logs/` with 7-day retention — raw prompts can
+// contain secrets/PII, so persist only a hash + length. Use the hash to correlate
+// invocations across events (same task ⇒ same hash) without leaking content.
+function describeTask(task) {
+  return {
+    task_hash: createHash('sha256').update(task, 'utf8').digest('hex').slice(0, 16),
+    task_length: task.length,
+  };
+}
 
 export { filterAvailable, printMissingWarning } from './runners.mjs';
 export {
@@ -104,7 +116,15 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         process.exit(1);
     }
 
-    try { emit({ type: 'agent_invocation', name, model: modelEquals, effort: effortEquals, task }); } catch { /* observability must never block agent dispatch */ }
+    try {
+      emit({
+        type: 'agent_invocation',
+        name,
+        model: modelEquals,
+        effort: effortEquals,
+        ...describeTask(task),
+      });
+    } catch { /* observability must never block agent dispatch */ }
 
     const result = await runAgent(name, entry.binary, args, parse);
 
@@ -123,12 +143,17 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       console.log(`\n${'═'.repeat(60)}`);
     }
 
-    try { emit({
-      type: 'agent_completion',
-      name,
-      exitCode: result.code,
-      hasError: !!result.error,
-    }); } catch { /* observability must never block agent dispatch */ }
+    try {
+      emit({
+        type: 'agent_completion',
+        name,
+        exitCode: result.code,
+        hasError: !!result.error,
+      });
+    } catch { /* observability must never block agent dispatch */ }
+
+    // Propagate agent failure as process exit code so slash-command callers can detect it.
+    process.exit(typeof result.code === 'number' ? result.code : 0);
   }
 
   // ── council ─────────────────────────────────────────────────────────────────

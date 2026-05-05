@@ -1,3 +1,5 @@
+> **SUPERSEDED**: This plan is partially superseded by the [ACP Migration Plan](plans/2026-05-05-acp-migration-plan.md). Codex now routes through an ACP stdio adapter (`@agentclientprotocol/sdk`) with the app-server JSON-RPC as a native fallback, not the primary transport. The gap analysis below remains useful for understanding the app-server fallback contract. See `docs/research/acp-feasibility.md` Appendix A for the native transport reference.
+
 # Codex App-Server Migration Plan
 
 ## Problem Statement
