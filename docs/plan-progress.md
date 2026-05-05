@@ -43,9 +43,9 @@
 
 ---
 
-## Ship 3 — Council port with 6-phase state machine (IN PROGRESS)
+## Ship 3 — Council port with 6-phase state machine (SHIPPED)
 
-**Worktree:** `ship-3-council`
+**Worktree:** `ship-3-council` → merged to `feature/acp-migration-2` at `6eaeca4`
 
 ### What was done
 - Created `core/schemas/council-position.schema.json` — Evolution A (structured JSON positions)
@@ -83,6 +83,17 @@
 - Individual test files: all pass (agent-subcommand: 21, second-opinion: 4, vote: 3, min-agents: 4, observability: 12, parsers: 5, strip-flags: 9)
 - Bundle + check-bundles: green
 - Direct council invocation with fake agents: produces valid JSON output
+
+### ce-code-review findings
+**Artifact:** `docs/reviews/ce-adversarial/ship3-council-2026-05-06.md`
+
+| Severity | Count | Key findings |
+|----------|-------|-------------|
+| P1 | 3 | 30s subprocess timeout too aggressive; council doesn't exit process cleanly; subprocess cleanup on exit |
+| P2 | 5 | Pre-flight questions collected but never answered; naive convergence check; no REGISTRY validation for member names; schema parse failures silent; `--rounds` accepts non-numeric |
+| P3 | 2 | Test temp directories accumulate; empty otherPositions in rebuttal prompt |
+
+**Deferred:** All findings deferred to post-Ship-5 final review (per plan directive: no between-ships fixes). Most critical: P1-1 (30s timeout → should be 120s for real agents).
 
 ---
 
