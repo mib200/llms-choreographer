@@ -1,0 +1,154 @@
+{
+  "version": "1.0",
+  "tool": "predict",
+  "generated_at": "2026-04-23T10:35:00Z",
+  "commit_hash": "939f0025c1bc",
+  "scope": ["core/**/*.mjs", "bin/**", "scripts/**", "plugin-*/src/**", "plugin-opencode/.opencode/plugins/*.ts"],
+  "summary": {
+    "personas": 5,
+    "rounds": 2,
+    "findings_confirmed": 9,
+    "findings_probable": 1,
+    "findings_minority": 0,
+    "anti_herd_passed": true,
+    "predict_score": 192
+  },
+  "findings": [
+    {
+      "id": "H-01",
+      "type": "security",
+      "severity": "CRITICAL",
+      "confidence": "HIGH",
+      "location": "core/companion.mjs:53",
+      "title": "--dangerously-skip-permissions on every agent invocation",
+      "description": "Every claude/opencode invocation across all commands appends --dangerously-skip-permissions unconditionally. No per-command opt-out. Combined with prompt injection enables full shell access.",
+      "recommendation": "Remove from non-destructive commands. Use --allowedTools for review.",
+      "personas_agreed": 5,
+      "personas_total": 5
+    },
+    {
+      "id": "H-02",
+      "type": "reliability",
+      "severity": "CRITICAL",
+      "confidence": "HIGH",
+      "location": "core/companion.mjs:244-260",
+      "title": "vote tally silently accepts all-INVALID results as valid",
+      "description": "No quorum check after tallying. If all agents fail, tally={yes:0,no:0,abstain:0,invalid:3} but exit code is 0 and output looks valid.",
+      "recommendation": "Exit non-zero if tally.invalid === parsed.length. Add error field in JSON mode.",
+      "personas_agreed": 5,
+      "personas_total": 5
+    },
+    {
+      "id": "H-03",
+      "type": "security",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "core/companion.mjs:84-98",
+      "title": "git diff injected into LLM prompt — injection + maxBuffer overflow",
+      "description": "spawnSync git diff with no maxBuffer (1MB default). Diff content interpolated verbatim into agent prompt. Malicious diff content passes to agents with --dangerously-skip-permissions.",
+      "recommendation": "Cap diff at 100KB. Wrap in <diff> delimiter. Add maxBuffer option. Move to async execFile.",
+      "personas_agreed": 5,
+      "personas_total": 5
+    },
+    {
+      "id": "H-04",
+      "type": "reliability",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "bin/install.mjs:63-64",
+      "title": "readdirSync/cpSync throw unhandled ENOENT if source dirs absent",
+      "description": "No try/catch around readdirSync(srcCmds) or cpSync(dist/companion.mjs). Partial install on failure leaves inconsistent state with no rollback.",
+      "recommendation": "Wrap in try/catch. Rollback with rmSync on failure. Pre-check dist/companion.mjs.",
+      "personas_agreed": 5,
+      "personas_total": 5
+    },
+    {
+      "id": "H-05",
+      "type": "reliability",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "core/runners.mjs:14",
+      "title": "checkCli spawnSync blocks event loop — no timeout",
+      "description": "spawnSync with no timeout option. Called N times synchronously per command invocation. Hangs entire process if binary is slow.",
+      "recommendation": "Add { timeout: 5000 } to spawnSync options.",
+      "personas_agreed": 5,
+      "personas_total": 5
+    },
+    {
+      "id": "H-06",
+      "type": "reliability",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "core/runners.mjs:54-68",
+      "title": "runAgent Promise never resolves if agent hangs",
+      "description": "spawn with no timeout. Promise.all hangs indefinitely. stdout/stderr buffers unbounded.",
+      "recommendation": "Add setTimeout kill + resolve({error:'timeout'}) after configurable deadline.",
+      "personas_agreed": 4,
+      "personas_total": 5
+    },
+    {
+      "id": "H-07",
+      "type": "quality",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "core/runners.mjs:~100",
+      "title": "requireAvailable calls process.exit(1) inside exported library",
+      "description": "Library export calls process.exit unconditionally. Any importer gets hard-killed. Untestable without subprocess isolation.",
+      "recommendation": "Throw Error instead. Let CLI entry point own exit decision.",
+      "personas_agreed": 4,
+      "personas_total": 5
+    },
+    {
+      "id": "H-08",
+      "type": "reliability",
+      "severity": "HIGH",
+      "confidence": "HIGH",
+      "location": "core/parsers.mjs:8-14",
+      "title": "parseClaudeStreamJson silently swallows JSON parse errors",
+      "description": "try/catch discards all JSON parse errors. Caller receives empty string with code 0 — indistinguishable from valid empty response.",
+      "recommendation": "Log errors to stderr. Track malformed-line rate.",
+      "personas_agreed": 4,
+      "personas_total": 5
+    },
+    {
+      "id": "H-09",
+      "type": "quality",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "location": "bin/install.mjs:19,44-45",
+      "title": "install.mjs PLUGIN_VERSION hardcoded, no version guard",
+      "description": "Every install overwrites same path regardless of version. No rollback on failure.",
+      "recommendation": "Read existing version before overwriting. Wrap cpSync in try/catch.",
+      "personas_agreed": 2,
+      "personas_total": 5
+    },
+    {
+      "id": "H-10",
+      "type": "security",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "location": "bin/install.sh",
+      "title": "curl-pipe installer + unverified npm name — supply chain risk",
+      "description": "README documents curl|bash with no checksum. npm package name unverified. Unconfirmed pending external check.",
+      "recommendation": "Publish SHA-256 checksums. Claim npm name. Use pinned npx.",
+      "personas_agreed": 1,
+      "personas_total": 5
+    }
+  ],
+  "hypotheses": [
+    { "rank": 1, "id": "H-01", "hypothesis": "--dangerously-skip-permissions enables full shell access via prompt injection", "confidence": "HIGH", "location": "core/companion.mjs:53" },
+    { "rank": 2, "id": "H-02", "hypothesis": "vote exits 0 with semantically invalid tally when all agents return INVALID", "confidence": "HIGH", "location": "core/companion.mjs:244-260" },
+    { "rank": 3, "id": "H-03", "hypothesis": "git diff maxBuffer overflow crashes review on large repos; diff content is LLM injection vector", "confidence": "HIGH", "location": "core/companion.mjs:84-98" },
+    { "rank": 4, "id": "H-04", "hypothesis": "installOpenCode throws unhandled ENOENT and leaves partial install state", "confidence": "HIGH", "location": "bin/install.mjs:63-64" },
+    { "rank": 5, "id": "H-05", "hypothesis": "checkCli spawnSync blocks event loop indefinitely on slow binary", "confidence": "HIGH", "location": "core/runners.mjs:14" },
+    { "rank": 6, "id": "H-06", "hypothesis": "runAgent hangs forever if agent process never closes", "confidence": "HIGH", "location": "core/runners.mjs:54-68" },
+    { "rank": 7, "id": "H-07", "hypothesis": "requireAvailable kills host process unconditionally — library contract violation", "confidence": "HIGH", "location": "core/runners.mjs:~100" },
+    { "rank": 8, "id": "H-08", "hypothesis": "Malformed stream-json lines silently dropped — partial output returned as success", "confidence": "HIGH", "location": "core/parsers.mjs:8-14" }
+  ],
+  "chain": {
+    "next": "debug",
+    "then": "fix",
+    "scope": ["core/companion.mjs", "core/runners.mjs", "core/parsers.mjs", "bin/install.mjs"],
+    "top_hypotheses": ["H-01", "H-02", "H-03", "H-04", "H-05", "H-06", "H-07", "H-08"]
+  }
+}

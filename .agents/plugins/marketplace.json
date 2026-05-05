@@ -1,0 +1,20 @@
+{
+  "name": "mib200",
+  "owner": { "name": "Manish Kumar" },
+  "metadata": {
+    "description": "Multi-agent choreography for Codex: council reviews, second opinions, parallel debug, and voting across Claude, Codex, and OpenCode.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "choreo",
+      "description": "Delegate tasks to Claude, Codex, and OpenCode: council reviews, second opinions, parallel debug, and voting.",
+      "version": "1.0.0",
+      "author": { "name": "Manish Kumar" },
+      "source": {
+        "path": "./plugin-codex",
+        "source": "local"
+      }
+    }
+  ]
+}

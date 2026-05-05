@@ -1,0 +1,19 @@
+{
+  "name": "choreo",
+  "version": "1.0.0",
+  "description": "Delegate tasks to Claude, Codex, and OpenCode: council reviews, second opinions, parallel debug, and voting.",
+  "author": {
+    "name": "Manish Kumar"
+  },
+  "homepage": "https://github.com/mib200/choreographer",
+  "repository": "https://github.com/mib200/choreographer",
+  "license": "MIT",
+  "keywords": ["delegation", "council", "review", "claude", "opencode", "multi-agent"],
+  "skills": "./skills",
+  "interface": {
+    "displayName": "Choreo",
+    "shortDescription": "Multi-agent delegation: council, second opinion, vote, parallel review/debug.",
+    "category": "Productivity",
+    "capabilities": ["council", "second-opinion", "vote", "parallel-review", "parallel-debug", "delegation"]
+  }
+}

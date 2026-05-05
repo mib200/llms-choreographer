@@ -6,3 +6,6 @@ code-review-graph/
 .worktrees/
 .DS_Store
 learn/
+graphify-out/
+.gitnexus
+.claude/skills/gitnexus/

@@ -1,0 +1,20 @@
+{
+  "name": "@mib200/choreo-opencode",
+  "version": "1.0.0",
+  "description": "Choreographer plugin for OpenCode: multi-agent delegation, council reviews, second opinions, parallel debug, and voting.",
+  "author": "Manish Kumar",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mib200/choreographer"
+  },
+  "keywords": ["opencode", "delegation", "council", "multi-agent", "review"],
+  "files": [
+    ".opencode",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

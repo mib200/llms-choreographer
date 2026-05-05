@@ -1,0 +1,11 @@
+{
+  "name": "choreo",
+  "description": "Delegate tasks to Claude, Codex, and OpenCode: council reviews, second opinions, parallel debug, and voting.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Manish Kumar"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/mib200/choreographer",
+  "keywords": ["delegation", "council", "review", "codex", "opencode", "multi-agent"]
+}

@@ -1,38 +1,17 @@
 {
-  "name": "llms-choreographer",
+  "name": "mib200",
   "owner": { "name": "Manish Kumar" },
   "metadata": {
-    "description": "Claude Code plugins for AI coding agent delegation: Claude, Codex, OpenCode.",
+    "description": "Multi-agent choreography for Claude Code: council reviews, second opinions, parallel debug, and voting across Claude, Codex, and OpenCode.",
     "version": "1.0.0"
   },
   "plugins": [
     {
-      "name": "claude",
-      "description": "Delegate tasks and code reviews to a second Claude Code instance.",
+      "name": "choreo",
+      "description": "Delegate tasks to Claude, Codex, and OpenCode: council reviews, second opinions, parallel debug, and voting.",
       "version": "1.0.0",
       "author": { "name": "Manish Kumar" },
-      "source": "./plugins/claude"
-    },
-    {
-      "name": "codex",
-      "description": "Delegate tasks and code reviews to Codex from Claude Code.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/codex"
-    },
-    {
-      "name": "opencode",
-      "description": "Delegate tasks and code reviews to OpenCode from Claude Code.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/opencode"
-    },
-    {
-      "name": "llms-choreographer",
-      "description": "Workflow patterns: LLM council, parallel review, parallel debug, second opinion, vote.",
-      "version": "1.0.0",
-      "author": { "name": "Manish Kumar" },
-      "source": "./plugins/llms-choreographer"
+      "source": "./plugin-claude"
     }
   ]
 }

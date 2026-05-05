@@ -1,1 +1,0 @@
-/Users/mk/Repositories/mib200/AI/choreographer/scripts/claude-print-args.sh
