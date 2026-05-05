@@ -98,4 +98,5 @@ Items 3–4 can be rolled into the same Phase D commit; item 1 deserves its own 
 - [pass-4-phase-d-re-review.md](pass-4-phase-d-re-review.md) — Phase D (`3e8c9ef`) verification: FF1/F6 fully-fixed, F8 partial, NFF1/NFF2 documented
 - [pass-5-working-tree-reaudit.md](pass-5-working-tree-reaudit.md) — independent working-tree re-audit; no new blockers, re-confirms F8 residual + NFF1
 - Claude-panel comparator: `docs/solutions/developer-experience/xreview-multi-round-hardening-2026-05-05.md`
+- ce-code-review (9-persona harness): `docs/reviews/ce-adversarial/ship1-foundation-2026-05-05.md` — third independent lens; 2 P0 + 10 P1 findings deferred pending consolidated security plan
 - Commits in scope: `5371e012`, `94ca34d`, `b0c9696`, `36861d7`, `3e8c9ef` on `feature/acp-migration`

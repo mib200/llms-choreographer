@@ -162,3 +162,5 @@ Phase B added a comment claiming "remaining branches short-circuit because cmd==
 
 - `docs/solutions/architecture-patterns/acp-migration-foundation-2026-05-05.md` — Ship 1 baseline this hardened
 - `docs/plans/2026-05-05-acp-migration-plan.md` — forward-looking Ship 2 broker design
+- `docs/reviews/codex-adversarial-2026-05-05/README.md` — Codex cross-check that produced Phase D fixes
+- `docs/reviews/ce-adversarial/ship1-foundation-2026-05-05.md` — 9-persona ce-code-review; 2 P0 + 10 P1 findings deferred pending consolidated security plan

@@ -130,6 +130,8 @@ Codex adversarial reviews (Pass 4 `3e8c9ef` + Pass 5 working-tree re-audit 2026-
 
 Artifacts of record: `docs/reviews/codex-adversarial-2026-05-05/pass-4-phase-d-re-review.md`, `docs/reviews/codex-adversarial-2026-05-05/pass-5-working-tree-reaudit.md`.
 
+**ce-code-review (9-persona harness):** `docs/reviews/ce-adversarial/ship1-foundation-2026-05-05.md` — third independent lens found 2 P0 + 10 P1 + 19 P2 findings. All deferred pending consolidated security plan. Notable new findings not raised by Codex panel: `NODE_OPTIONS` code-execution via env allowlist (P0), stdout drain zombie hang (P0), retention mtime-vs-filename-date bug (P1), cascade-fail rotation-append invariant violation (P1), Windows SIGUSR1 crash (P1), log file umask exposure (P2), task_length side-channel (P2).
+
 **Scheduling:** re-run `/codex:adversarial-review` + `npm test` (writable env) during the **post-Ship-5 final review**, not between ships. Ship 1 → Ship 2 handoff proceeds with these residuals carried forward as Ship-1 debt.
 
 ---

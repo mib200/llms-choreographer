@@ -169,3 +169,5 @@ Ship 1 establishes observability + single-agent fix. Ship 2 runs one full week o
 - ACP protocol reference: https://agentclientprotocol.com
 - ACP TypeScript SDK: `@agentclientprotocol/sdk@0.21.0` (Apache-2.0)
 - Related tooling bug: `docs/solutions/developer-experience/write-tool-empty-params-large-content-2026-05-05.md` (Write tool parameter stripping encountered during plan authoring)
+- Codex adversarial review: `docs/reviews/codex-adversarial-2026-05-05/README.md` (Phase D fixes FF1/F6/F8)
+- ce-code-review (9-persona): `docs/reviews/ce-adversarial/ship1-foundation-2026-05-05.md` (2 P0 + 10 P1 deferred pending security plan)
