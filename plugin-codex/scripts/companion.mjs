@@ -137,7 +137,7 @@ function requireAvailable(agents, min = 2) {
 }
 
 // core/observability.mjs
-import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync, openSync, closeSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 var DEFAULT_MAX_BYTES_PER_DAY = 100 * 1024 * 1024;
@@ -148,9 +148,12 @@ function logDir() {
 }
 function maxBytesPerDay() {
   const env = process.env.CHOREO_LOG_MAX_BYTES;
-  if (env) {
-    const n = parseInt(env, 10);
-    if (Number.isFinite(n) && n > 0) return n;
+  if (env !== void 0) {
+    const trimmed = env.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const n = parseInt(trimmed, 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
   }
   return DEFAULT_MAX_BYTES_PER_DAY;
 }
@@ -190,11 +193,11 @@ function emit(event) {
   const dir = logDir();
   ensureDir();
   if (!rotatedThisProcess) {
-    rotatedThisProcess = true;
     try {
       rotate();
     } catch {
     }
+    rotatedThisProcess = true;
   }
   const today = dateKey();
   const file = join(dir, `${today}.ndjson`);
@@ -205,8 +208,23 @@ function emit(event) {
   } catch {
   }
   if (curSize >= cap) {
-    const seq = nextBackupSeq(dir, today);
-    const rotatedName = join(dir, `${today}.ndjson.${seq}`);
+    let seq = nextBackupSeq(dir, today);
+    let rotatedName;
+    let reserved = false;
+    for (let tries = 0; tries < 20; tries++) {
+      rotatedName = join(dir, `${today}.ndjson.${seq}`);
+      try {
+        const fd = openSync(rotatedName, "wx");
+        closeSync(fd);
+        reserved = true;
+        break;
+      } catch {
+        seq++;
+      }
+    }
+    if (!reserved) {
+      throw new Error(`choreo observability: could not reserve backup name after 20 attempts in ${dir}`);
+    }
     renameSync(file, rotatedName);
   }
   appendFileSync(file, line, "utf8");
@@ -350,7 +368,9 @@ ${"\u2550".repeat(60)}`);
       });
     } catch {
     }
-    process.exitCode = typeof result.code === "number" ? result.code : 1;
+    const exitCode = typeof result.code === "number" ? result.code : 1;
+    await new Promise((resolve) => process.stdout.write("", resolve));
+    process.exit(exitCode);
   }
   if (cmd === "council") {
     const jsonMode = rest.includes("--json");

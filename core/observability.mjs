@@ -1,4 +1,4 @@
-import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -14,9 +14,14 @@ function logDir() {
 
 function maxBytesPerDay() {
   const env = process.env.CHOREO_LOG_MAX_BYTES;
-  if (env) {
-    const n = parseInt(env, 10);
-    if (Number.isFinite(n) && n > 0) return n;
+  if (env !== undefined) {
+    const trimmed = env.trim();
+    // Strict: must be pure positive integer. Rejects "1024abc" (parseInt would accept),
+    // "0", "-5", empty, and non-numeric. Falls back to default on any invalid value.
+    if (/^\d+$/.test(trimmed)) {
+      const n = parseInt(trimmed, 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
   }
   return DEFAULT_MAX_BYTES_PER_DAY;
 }
@@ -88,10 +93,12 @@ export function emit(event) {
   const dir = logDir();
   ensureDir();
 
-  // Enforce retention once per process on first emit.
+  // Enforce retention once per process on first emit. Set the flag AFTER rotate so that
+  // if rotate throws mid-sweep the next emit re-attempts retention instead of silently
+  // skipping it for the lifetime of the process.
   if (!rotatedThisProcess) {
-    rotatedThisProcess = true;
     try { rotate(); } catch { /* retention sweep must not block emit */ }
+    rotatedThisProcess = true;
   }
 
   const today = dateKey();
@@ -99,13 +106,29 @@ export function emit(event) {
   const cap = maxBytesPerDay();
 
   // If the active file alone exceeds the cap, rotate it to the next sequential backup.
-  // Use a monotonic counter (not Date.now()) so rotations in the same millisecond don't collide.
+  // Reservation is race-safe across processes: O_EXCL create a zero-byte sentinel at the
+  // candidate backup name. If the name exists, bump seq and retry. Then renameSync
+  // overwrites our sentinel atomically. Two concurrent emitters never clobber the same
+  // backup because only one can successfully create each sentinel.
   // Aggregate storage is bounded by the 7-day retention sweep (see `rotate()`).
   let curSize = 0;
   try { curSize = statSync(file).size; } catch { /* file doesn't exist yet */ }
   if (curSize >= cap) {
-    const seq = nextBackupSeq(dir, today);
-    const rotatedName = join(dir, `${today}.ndjson.${seq}`);
+    let seq = nextBackupSeq(dir, today);
+    let rotatedName;
+    let reserved = false;
+    for (let tries = 0; tries < 20; tries++) {
+      rotatedName = join(dir, `${today}.ndjson.${seq}`);
+      try {
+        const fd = openSync(rotatedName, 'wx'); // O_EXCL | O_CREAT | O_WRONLY
+        closeSync(fd);
+        reserved = true;
+        break;
+      } catch { seq++; /* name taken by another process; try next seq */ }
+    }
+    if (!reserved) {
+      throw new Error(`choreo observability: could not reserve backup name after 20 attempts in ${dir}`);
+    }
     // Fail closed: if rename fails, let the outer emit() caller's try/catch swallow the event
     // rather than silently writing past the cap into an oversized file.
     renameSync(file, rotatedName);

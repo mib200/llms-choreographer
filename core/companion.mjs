@@ -152,11 +152,16 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block agent dispatch */ }
 
-    // Propagate agent failure as process exit code so slash-command callers can detect it.
-    // Use `exitCode` (not `process.exit`) so buffered stdout from the agent output above
-    // flushes naturally before the process terminates. The remaining `if (cmd === ...)`
-    // branches below all short-circuit because cmd === 'agent', so this effectively returns.
-    process.exitCode = typeof result.code === 'number' ? result.code : 1;
+    // Propagate agent failure as process exit code. Two concerns to satisfy:
+    //   (a) Buffered stdout from the preceding console.log must flush — otherwise a
+    //       piped caller sees truncated output when we terminate.
+    //   (b) We must NOT fall through to the remaining `if (cmd === 'council' | ...)`
+    //       blocks. They happen to all fail the `cmd === 'agent'` guard today, but the
+    //       next command added could match, silently re-entering dispatch.
+    // Solution: drain stdout explicitly, then hard-exit with the computed code.
+    const exitCode = typeof result.code === 'number' ? result.code : 1;
+    await new Promise(resolve => process.stdout.write('', resolve));
+    process.exit(exitCode);
   }
 
   // ── council ─────────────────────────────────────────────────────────────────

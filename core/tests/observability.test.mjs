@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, utimesSync, mkdirSync, existsSync, rmSync, statSync, readdirSync } from 'node:fs';
+import { writeFileSync, utimesSync, mkdirSync, existsSync, rmSync, statSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -167,6 +167,66 @@ test('readEvents stitches events across numbered backups in chronological order'
   const events = readEvents(today).filter(e => e.type === 'ev');
   assert.equal(events.length, 4, 'all 4 events recovered across backups + active file');
   assert.deepEqual(events.map(e => e.seq), [1, 2, 3, 4], 'events returned in chronological order');
+});
+
+test('CHOREO_LOG_MAX_BYTES parse is strict — garbage/zero/negative all fall back to default', async () => {
+  // Fresh import each case via the reset helper so every probe reads the env var anew.
+  const cases = [
+    ['1024abc', false],  // trailing garbage → reject
+    ['0',       false],  // zero → reject
+    ['-5',      false],  // negative → reject (rejected by /^\d+$/)
+    ['',        false],  // empty → reject
+    ['abc',     false],  // non-numeric → reject
+    ['1024',    true],   // valid → accept
+    ['  1024 ', true],   // whitespace stripped → accept
+  ];
+
+  // Import once, then flip env var per case. maxBytesPerDay reads lazily.
+  const { emit } = await loadObs();
+  const today = new Date().toISOString().slice(0, 10);
+  const file = join(tmpLogDir, `${today}.ndjson`);
+
+  for (const [value, shouldHonour] of cases) {
+    process.env.CHOREO_LOG_MAX_BYTES = value;
+    // Pre-fill active file to just above 1024 bytes.
+    writeFileSync(file, 'x'.repeat(1100));
+    emit({ type: 'probe' });
+
+    const backups = readdirSync(tmpLogDir).filter(f => /^\d{4}-\d{2}-\d{2}\.ndjson\.\d+$/.test(f));
+    if (shouldHonour) {
+      assert.ok(backups.length > 0, `value="${value}" honoured — rotation should have fired`);
+    } else {
+      // With default cap of 100MB, 1100 bytes never triggers rotation.
+      assert.equal(backups.length, 0, `value="${value}" rejected — no rotation expected`);
+    }
+    // Clean backups between cases.
+    for (const b of backups) rmSync(join(tmpLogDir, b), { force: true });
+    rmSync(file, { force: true });
+  }
+});
+
+test('rotation chooses a fresh backup name when lower sequence already taken (O_EXCL reservation)', async () => {
+  process.env.CHOREO_LOG_MAX_BYTES = String(1024);
+  const { emit } = await loadObs();
+  const today = new Date().toISOString().slice(0, 10);
+  const file = join(tmpLogDir, `${today}.ndjson`);
+
+  // Pre-seed a backup at .1 (simulates a concurrent process that reserved seq=1 first).
+  writeFileSync(join(tmpLogDir, `${today}.ndjson.1`), 'pre-existing');
+  // Pre-fill active past cap.
+  writeFileSync(file, 'x'.repeat(2 * 1024));
+
+  emit({ type: 'after_rotate' });
+
+  // Original .1 backup must be preserved (we did NOT overwrite it).
+  assert.equal(
+    readFileSync(join(tmpLogDir, `${today}.ndjson.1`), 'utf8'),
+    'pre-existing',
+    '.1 backup preserved — O_EXCL prevented clobber'
+  );
+  // Our rotation went to .2 or higher.
+  const ours = readdirSync(tmpLogDir).filter(f => /^\d{4}-\d{2}-\d{2}\.ndjson\.\d+$/.test(f) && !f.endsWith('.1'));
+  assert.ok(ours.length >= 1, 'rotation produced a fresh backup distinct from the pre-existing one');
 });
 
 test('emit fails closed when renameSync fails (does not corrupt oversized file)', async () => {
