@@ -13,7 +13,7 @@ Use the choreo-claude skill: <task or prompt>
 
 ## What it does
 
-Runs `node scripts/companion.mjs council "<task>"` targeting Claude. Returns Claude's response.
+Runs `node scripts/companion.mjs agent --name=claude "<task>"`. Returns Claude's response.
 
 ## Example
 

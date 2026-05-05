@@ -7,5 +7,5 @@ Delegate to Codex.
 **Usage:** `/choreo-codex <task or prompt>`
 
 ```bash
-node "$(dirname "$0")/../../dist/companion.mjs" council "$@"
+node "$(dirname "$0")/../../dist/companion.mjs" agent --name=codex "$@"
 ```

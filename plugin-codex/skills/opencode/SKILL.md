@@ -13,7 +13,7 @@ Use the choreo-opencode skill: <task or prompt>
 
 ## What it does
 
-Runs `node scripts/companion.mjs council "<task>"` targeting OpenCode. Returns OpenCode's response.
+Runs `node scripts/companion.mjs agent --name=opencode "<task>"`. Returns OpenCode's response.
 
 ## Example
 

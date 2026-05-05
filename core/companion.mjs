@@ -5,6 +5,7 @@ import {
   REGISTRY, checkCli, requireAvailable, runAgent,
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
+import { emit } from './observability.mjs';
 
 export { filterAvailable, printMissingWarning } from './runners.mjs';
 export {
@@ -40,6 +41,94 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
     }
     process.exit(ok ? 0 : 1);
+  }
+
+  // ── agent ───────────────────────────────────────────────────────────────────
+
+  if (cmd === 'agent') {
+    const jsonMode = rest.includes('--json');
+    const nameEquals = rest.find(a => a.startsWith('--name='))?.split('=')[1];
+    const modelEquals = rest.find(a => a.startsWith('--model='))?.split('=')[1];
+    const effortEquals = rest.find(a => a.startsWith('--effort='))?.split('=')[1];
+    const task = rest.filter(a => !a.startsWith('--')).join(' ').trim();
+
+    if (!nameEquals) {
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>');
+      process.exit(1);
+    }
+    if (!task) {
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>');
+      process.exit(1);
+    }
+
+    const name = nameEquals;
+    const entry = REGISTRY[name];
+    if (!entry) {
+      console.error(`Unknown agent: "${name}". Choose from: ${Object.keys(REGISTRY).join(', ')}`);
+      process.exit(1);
+    }
+
+    const { status } = checkCli(entry.binary);
+    if (status !== 'ok') {
+      console.error(`Agent "${name}" is not installed. Run: ${entry.setup}`);
+      process.exit(1);
+    }
+
+    // Build args based on agent type
+    let args;
+    let parse = s => s;
+    switch (name) {
+      case 'claude': {
+        const claudeArgs = ['--print', '--output-format', 'stream-json', '--verbose', task, '--dangerously-skip-permissions'];
+        if (modelEquals) claudeArgs.splice(0, 0, '--model', modelEquals);
+        args = claudeArgs;
+        parse = parseClaudeStreamJson;
+        break;
+      }
+      case 'codex': {
+        const codexArgs = ['exec', task];
+        if (effortEquals) codexArgs.splice(0, 0, '--effort', effortEquals);
+        if (modelEquals) codexArgs.splice(0, 0, '--model', modelEquals);
+        args = codexArgs;
+        break;
+      }
+      case 'opencode': {
+        const opencodeArgs = ['run', task, '--dangerously-skip-permissions'];
+        if (modelEquals) opencodeArgs.splice(1, 0, '--model', modelEquals);
+        args = opencodeArgs;
+        parse = parseOpenCodeOutput;
+        break;
+      }
+      default:
+        console.error(`Agent "${name}" not supported in Ship 1.`);
+        process.exit(1);
+    }
+
+    try { emit({ type: 'agent_invocation', name, model: modelEquals, effort: effortEquals, task }); } catch { /* observability must never block agent dispatch */ }
+
+    const result = await runAgent(name, entry.binary, args, parse);
+
+    if (jsonMode) {
+      printJSON('agent', [result]);
+    } else {
+      console.log(`\n${'═'.repeat(60)}`);
+      console.log(`AGENT: ${result.name.toUpperCase()}`);
+      console.log('═'.repeat(60));
+      if (result.code !== 0 && !result.output) {
+        console.log(`[error — exit ${result.code}]`);
+        if (result.error) console.log(result.error);
+      } else {
+        console.log(result.output || result.error || '[no output]');
+      }
+      console.log(`\n${'═'.repeat(60)}`);
+    }
+
+    try { emit({
+      type: 'agent_completion',
+      name,
+      exitCode: result.code,
+      hasError: !!result.error,
+    }); } catch { /* observability must never block agent dispatch */ }
   }
 
   // ── council ─────────────────────────────────────────────────────────────────
@@ -298,11 +387,11 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     }
   }
 
-  const known = ['check-all', 'council', 'review', 'debug', 'second-opinion', 'vote'];
+  const known = ['check-all', 'agent', 'council', 'review', 'debug', 'second-opinion', 'vote'];
 
   if (!cmd || !known.includes(cmd)) {
     if (cmd) console.error(`Unknown command: "${cmd}"`);
-    console.error('Usage: companion.mjs <check-all|council|review|debug|second-opinion|vote> [args...]');
+    console.error('Usage: companion.mjs <check-all|agent|council|review|debug|second-opinion|vote> [args...]');
     process.exit(1);
   }
 }

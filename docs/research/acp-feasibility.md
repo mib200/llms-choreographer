@@ -213,3 +213,219 @@ Ship 3 council port must demonstrate non-regression vs baseline on all four load
 All four transports have clear ACP-first paths with native fallbacks. Package identities are npm-verified. Schema enforcement strategy is uniform across agents. Metrics are defined + ready to instrument. Risks are enumerated with mitigations.
 
 Ship 2 adapter implementation may proceed once the atomic plan + research commit lands.
+
+---
+
+## Appendix A — Codex `app-server` Native JSON-RPC Contract
+
+*Reference for Ship 2 fallback path. Not exercised in ACP-first happy path.*
+
+### Transport
+
+Newline-delimited JSON (JSONL) over Unix socket. JSON-RPC 2.0 protocol.
+
+### Method Inventory
+
+| Method | Params | Result | Notes |
+|--------|--------|--------|-------|
+| `initialize` | `{ clientInfo, capabilities }` | `{ userAgent }` | Handshake |
+| `initialized` | `{}` | _(notification)_ | Client→server ack |
+| `thread/start` | `{ cwd, model, approvalPolicy, sandbox, serviceName, ephemeral }` | `{ thread: { id } }` | New thread |
+| `thread/resume` | `{ threadId, cwd, model, approvalPolicy, sandbox }` | `{ thread: { id } }` | Resume thread |
+| `thread/list` | `{ cwd, limit, sortKey, sourceKinds, searchTerm }` | `{ data: Thread[] }` | Discovery |
+| `thread/name/set` | `{ threadId, name }` | `{}` | Rename |
+| `thread/compact/start` | _(streaming)_ | _(streaming)_ | Context compaction |
+| `turn/start` | `{ threadId, input, model, effort, outputSchema }` | `{ turn: { id } }` | Start turn + stream |
+| `turn/interrupt` | `{ threadId, turnId }` | `{}` | Cancel turn |
+| `review/start` | `{ threadId, delivery, target }` | `{ reviewThreadId? }` | Code review turn |
+| `account/read` | `{ refreshToken }` | Auth info | Auth status |
+| `config/read` | `{ includeLayers, cwd }` | Config object | Provider/model config |
+| `broker/shutdown` | `{}` | `{}` | Graceful teardown |
+
+### Streaming Notifications (S→C)
+
+| Method | Meaning |
+|--------|---------|
+| `turn/started` | Turn began |
+| `item/started` | Item started (agentMessage, fileChanged, etc.) |
+| `item/completed` | Item finished |
+| `turn/completed` | Turn finished |
+| `error` | Server-side error |
+
+**Item types**: `agentMessage` (phase: `final_answer`), `fileChanged`, `commandOutput`, `reasoning`
+
+### Broker Lifecycle
+
+1. `ensureBrokerSession(cwd)` → temp dir, endpoint `unix:<dir>/broker.sock`, spawns detached `node app-server-broker.mjs serve --endpoint <ep> --cwd <cwd> --pid-file <path>`
+2. Poll socket every 50ms, timeout 2000ms
+3. Write `<stateDir>/broker.json` with `{ endpoint, pidFile, logFile, sessionDir, pid }`
+4. Teardown: `broker/shutdown` → broker closes sockets, exits → kill PID, remove files
+
+### BUSY Fallback
+
+One active request per socket. Second request gets error code `-32001`. Client retries with `disableBroker: true` (direct stdio spawn). Exception: `turn/interrupt` allowed during active stream.
+
+### Env Vars
+
+| Variable | Injected On | Purpose |
+|----------|-------------|---------|
+| `CODEX_COMPANION_SESSION_ID` | SessionStart | Track jobs per session |
+| `CLAUDE_PLUGIN_DATA` | SessionStart | Plugin data directory |
+| `CODEX_COMPANION_APP_SERVER_ENDPOINT` | Broker spawn | Socket address |
+| `CODEX_COMPANION_APP_SERVER_PID_FILE` | Broker spawn | Process tracking |
+| `CODEX_COMPANION_APP_SERVER_LOG_FILE` | Broker spawn | Log location |
+
+### Stop Hook Contract
+
+- Timeout: 15 minutes (`900,000ms`)
+- Input (stdin): `{ session_id, cwd, last_assistant_message }`
+- Output (stdout): `{ decision: "block", reason: "..." }` or nothing (allows stop)
+
+---
+
+## Appendix B — OpenCode `serve` HTTP API Contract
+
+*Reference for Ship 2 fallback path. Not exercised in ACP-first happy path.*
+
+### Server Start
+
+```bash
+opencode serve --port 4096 --hostname 127.0.0.1
+```
+
+### HTTP Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/global/health` | `{ healthy: true, version }` |
+| POST | `/session` | Create session → `{ id, title }` |
+| GET | `/session` | List sessions |
+| GET | `/session/:id` | Get session details |
+| DELETE | `/session/:id` | Delete session |
+| **POST** | **`/session/:id/message`** | **Send message, wait for response** |
+| POST | `/session/:id/prompt_async` | Send message, return 204 |
+| POST | `/session/:id/abort` | Cancel running session |
+| GET | `/event` | SSE stream |
+| GET | `/doc` | OpenAPI 3.1 spec |
+
+### Request Shape (POST `/session/:id/message`)
+
+```json
+{
+  "model": { "providerID": "anthropic", "modelID": "claude-sonnet-4-20250514" },
+  "agent": "coder",
+  "system": "optional system prompt override",
+  "parts": [{ "type": "text", "text": "Fix the failing tests" }]
+}
+```
+
+### Response Shape
+
+```json
+{
+  "info": { "id": "msg_...", "role": "assistant", "sessionID": "...", "createdAt": "..." },
+  "parts": [
+    { "type": "text", "text": "I'll fix those tests..." },
+    { "type": "tool_use", "toolName": "Bash", "input": {...}, "output": {...} }
+  ]
+}
+```
+
+### SSE Streaming
+
+```
+GET /event
+data: {"type": "server.connected", ...}
+data: {"type": "message.start", "sessionID": "...", ...}
+data: {"type": "message.delta", "content": "...", ...}
+data: {"type": "message.complete", ...}
+```
+
+### SDK (`@opencode-ai/sdk`)
+
+```typescript
+import { createOpencode } from "@opencode-ai/sdk"
+const { client } = await createOpencode({ signal, timeout: 5000 })
+const session = await client.session.create({ body: { title: "review" } })
+const response = await client.session.prompt({ path: { id: session.id }, body: { parts: [{ type: "text", text: "Fix tests" }] } })
+await client.session.abort({ path: { id: session.id } })
+```
+
+### Session Model
+
+- Persistent server-side sessions
+- `parentID` enables session forking
+- Sessions survive server restarts
+- Status: `GET /session/status` → `{ [id]: "running" | "idle" }`
+
+---
+
+## Appendix C — Gemini Subprocess Contract
+
+*Reference for Ship 5+ fallback path.*
+
+### Canonical Invocation
+
+```bash
+# Minimal
+gemini -y -p "your prompt"
+
+# With model + JSON output
+gemini -y -m gemini-2.5-pro -o json -p "your prompt"
+
+# With streaming
+gemini -y -m gemini-2.5-flash -o stream-json -p "your prompt"
+
+# Stdin piping (appended to -p)
+echo "context" | gemini -y -o json -p "analyze this"
+```
+
+### Key Flags
+
+| Flag | Purpose |
+|------|---------|
+| `-p "prompt"` | Non-interactive headless mode |
+| `-y` / `--yolo` | Auto-approve all tool actions |
+| `-m <model>` | Model selection |
+| `-o json` | Structured JSON output |
+| `-o stream-json` | JSONL streaming events |
+| `-s` / `--sandbox` | Sandbox mode |
+| `--resume <id>` | Resume session (interactive only) |
+
+### Output Format (`-o json`)
+
+```json
+{
+  "session_id": "uuid",
+  "response": "model's text response",
+  "stats": { "models": { "<model>": { "api": { "totalRequests": N, "totalErrors": N, "totalLatencyMs": N } } } }
+}
+```
+
+### Stream-JSON Events (`-o stream-json`)
+
+| Event | Content |
+|-------|---------|
+| `init` | Session metadata |
+| `message` | User/assistant chunks |
+| `tool_use` | Tool call requests |
+| `tool_result` | Tool outputs |
+| `error` | Non-fatal warnings |
+| `result` | Final outcome with stats |
+
+### Retry/Fallback/Skip (from council skill)
+
+1. Probe: `gemini -m <model> -p "ping"` — 2 attempts
+2. Failure signals: `unknown model`, `not found`, `MODEL_CAPACITY_EXHAUSTED`, `429`, `rate limit`, `quota`, non-zero exit
+3. Fallback: If primary fails 2x, try `--gemini-fallback=<model>` with same 2-attempt probe
+4. Skip: If all probes fail, remove gemini from participation
+
+### Session Model
+
+- One-shot only for subprocess. No headless resume.
+- `--resume <id>` exists but requires interactive TTY.
+- `session_id` returned in JSON but not reusable in `-p` mode.
+
+### Cancellation
+
+SIGTERM. No graceful protocol.
