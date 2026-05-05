@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { parseClaudeStreamJson, parseOpenCodeOutput } from './parsers.mjs';
+import { parseClaudeStreamJson, parseOpenCodeOutput, parseStructuredOutput } from './parsers.mjs';
 import {
-  REGISTRY, checkCli, requireAvailable, runAgent,
+  REGISTRY, checkCli, requireAvailable, runAgent, checkAgent,
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
 import { emit } from './observability.mjs';
@@ -21,9 +21,9 @@ function describeTask(task) {
 
 export { filterAvailable, printMissingWarning } from './runners.mjs';
 export {
-  REGISTRY, checkCli, requireAvailable, runAgent,
+  REGISTRY, checkCli, requireAvailable, runAgent, checkAgent,
   printDelimited, printJSON, stripFlags,
-  parseClaudeStreamJson, parseOpenCodeOutput,
+  parseClaudeStreamJson, parseOpenCodeOutput, parseStructuredOutput,
 };
 
 // ── CLI entry point ───────────────────────────────────────────────────────────
@@ -59,31 +59,33 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
   if (cmd === 'agent') {
     // Known-flag allowlist parser. Only strip tokens the subcommand actually owns
-    // (--json, --name=, --model=, --effort=). Any other `--*` token is preserved
-    // as part of the task text, so user prompts like "explain --force and --no-verify"
-    // survive verbatim. `--` is an explicit delimiter: every token after it is task,
-    // regardless of leading dashes.
+    // (--json, --name=, --model=, --effort=, --resume=, --mode=). Any other `--*`
+    // token is preserved as part of the task text, so user prompts like "explain
+    // --force and --no-verify" survive verbatim. `--` is an explicit delimiter:
+    // every token after it is task, regardless of leading dashes.
     let jsonMode = false;
-    let nameEquals, modelEquals, effortEquals;
+    let nameEquals, modelEquals, effortEquals, resumeEquals, modeEquals;
     const taskTokens = [];
     let afterDashDash = false;
     for (const a of rest) {
       if (afterDashDash) { taskTokens.push(a); continue; }
       if (a === '--') { afterDashDash = true; continue; }
       if (a === '--json') { jsonMode = true; continue; }
-      if (a.startsWith('--name='))   { nameEquals   = a.slice('--name='.length);   continue; }
-      if (a.startsWith('--model='))  { modelEquals  = a.slice('--model='.length);  continue; }
-      if (a.startsWith('--effort=')) { effortEquals = a.slice('--effort='.length); continue; }
+      if (a.startsWith('--name='))    { nameEquals    = a.slice('--name='.length);    continue; }
+      if (a.startsWith('--model='))   { modelEquals   = a.slice('--model='.length);   continue; }
+      if (a.startsWith('--effort='))  { effortEquals  = a.slice('--effort='.length);  continue; }
+      if (a.startsWith('--resume='))  { resumeEquals  = a.slice('--resume='.length);  continue; }
+      if (a.startsWith('--mode='))    { modeEquals    = a.slice('--mode='.length);    continue; }
       taskTokens.push(a);
     }
     const task = taskTokens.join(' ').trim();
 
     if (!nameEquals) {
-      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>');
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>');
       process.exit(1);
     }
     if (!task) {
-      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>');
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>');
       process.exit(1);
     }
 
@@ -94,13 +96,17 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       process.exit(1);
     }
 
-    const { status } = checkCli(entry.binary);
-    if (status !== 'ok') {
+    // Use adapter checkAvailability when available
+    const availability = entry.adapter
+      ? await entry.adapter.checkAvailability()
+      : { available: checkCli(entry.binary).status === 'ok' };
+
+    if (!availability.available && !availability.transport) {
       console.error(`Agent "${name}" is not installed. Run: ${entry.setup}`);
       process.exit(1);
     }
 
-    // Build args based on agent type
+    // Build args based on agent type (legacy path when adapter not used)
     let args;
     let parse = s => s;
     switch (name) {
@@ -126,7 +132,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         break;
       }
       default:
-        console.error(`Agent "${name}" not supported in Ship 1.`);
+        console.error(`Agent "${name}" not supported.`);
         process.exit(1);
     }
 
@@ -136,10 +142,53 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         name,
         model: modelEquals,
         effort: effortEquals,
+        mode: modeEquals,
+        resume_session: resumeEquals,
         ...describeTask(task),
       });
     } catch { /* observability must never block agent dispatch */ }
 
+    // If adapter is available, use it with full flag support
+    if (entry.adapter && availability.transport) {
+      const result = await entry.adapter.invoke({
+        prompt: task,
+        model: modelEquals,
+        effort: effortEquals,
+        resumeSessionId: resumeEquals,
+        mode: modeEquals,
+      });
+
+      if (jsonMode) {
+        printJSON('agent', [{ name, output: result.output, error: result.error, exitCode: result.exitCode ?? 0 }]);
+      } else {
+        console.log(`\n${'═'.repeat(60)}`);
+        console.log(`AGENT: ${result.name ?? name.toUpperCase()}`);
+        console.log('═'.repeat(60));
+        if (result.exitCode !== 0 && !result.output) {
+          console.log(`[error — exit ${result.exitCode}]`);
+          if (result.error) console.log(result.error);
+        } else {
+          console.log(result.output || result.error || '[no output]');
+        }
+        console.log(`\n${'═'.repeat(60)}`);
+      }
+
+      try {
+        emit({
+          type: 'agent_completion',
+          name,
+          exitCode: result.exitCode ?? 0,
+          hasError: !!result.error,
+          transport: result.transport,
+        });
+      } catch { /* observability must never block agent dispatch */ }
+
+      const exitCode = typeof result.exitCode === 'number' ? result.exitCode : 1;
+      await new Promise(resolve => process.stdout.write('', resolve));
+      process.exit(exitCode);
+    }
+
+    // Legacy path: use runAgent with subprocess
     const result = await runAgent(name, entry.binary, args, parse);
 
     if (jsonMode) {
@@ -166,13 +215,6 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block agent dispatch */ }
 
-    // Propagate agent failure as process exit code. Two concerns to satisfy:
-    //   (a) Buffered stdout from the preceding console.log must flush — otherwise a
-    //       piped caller sees truncated output when we terminate.
-    //   (b) We must NOT fall through to the remaining `if (cmd === 'council' | ...)`
-    //       blocks. They happen to all fail the `cmd === 'agent'` guard today, but the
-    //       next command added could match, silently re-entering dispatch.
-    // Solution: drain stdout explicitly, then hard-exit with the computed code.
     const exitCode = typeof result.code === 'number' ? result.code : 1;
     await new Promise(resolve => process.stdout.write('', resolve));
     process.exit(exitCode);
@@ -434,7 +476,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     }
   }
 
-  const known = ['check-all', 'agent', 'council', 'review', 'debug', 'second-opinion', 'vote'];
+  const known = ['check-all', 'agent', 'council', 'review', 'debug', 'second-opinion', 'vote', 'verify', 'goals', 'adversarial-review'];
 
   if (!cmd || !known.includes(cmd)) {
     if (cmd) console.error(`Unknown command: "${cmd}"`);

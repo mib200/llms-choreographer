@@ -26,3 +26,44 @@ export function parseOpenCodeOutput(raw) {
     .join('\n')
     .trim() || raw.trim();
 }
+
+/**
+ * Client-side JSON validation for ACP structured output.
+ *
+ * ACP doesn't enforce JSON schemas — validation happens here.
+ * Parse failures return null gracefully (don't crash).
+ *
+ * @param {string} raw — raw output string from agent
+ * @param {object} schema — JSON schema with optional `required` array
+ * @returns {object|null} — parsed object if valid, null otherwise
+ */
+export function parseStructuredOutput(raw, schema) {
+  if (!schema) return null;
+  try {
+    // Try to find JSON object in the raw output (agents may wrap in markdown)
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Basic validation: check required top-level keys
+    if (schema.required && Array.isArray(schema.required)) {
+      for (const key of schema.required) {
+        if (!(key in parsed)) return null;
+      }
+    }
+
+    // Check enum values if specified
+    if (schema.properties) {
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        if (key in parsed && propSchema.enum && !propSchema.enum.includes(parsed[key])) {
+          return null;
+        }
+      }
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}

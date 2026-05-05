@@ -1,9 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { ClaudeAdapter } from './agents/claude.mjs';
+import { CodexAdapter } from './agents/codex.mjs';
+import { OpenCodeAdapter } from './agents/opencode.mjs';
 
 export const REGISTRY = {
-  claude:   { binary: 'claude',   setup: '/choreo:claude'   },
-  codex:    { binary: 'codex',    setup: '/choreo:codex'    },
-  opencode: { binary: 'opencode', setup: '/choreo:opencode' },
+  claude:   { binary: 'claude',   setup: '/choreo:claude',   adapter: new ClaudeAdapter() },
+  codex:    { binary: 'codex',    setup: '/choreo:codex',    adapter: new CodexAdapter() },
+  opencode: { binary: 'opencode', setup: '/choreo:opencode', adapter: new OpenCodeAdapter() },
 };
 
 const CLI_CHECK_TIMEOUT_MS = 5_000;
@@ -55,6 +58,17 @@ export function checkCli(binary) {
   return { status: 'ok', version: r.stdout.trim() };
 }
 
+/** Check availability using adapter when available, falling back to CLI check. */
+export async function checkAgent(name) {
+  const entry = REGISTRY[name];
+  if (!entry) return { available: false, reason: 'unknown agent' };
+  if (entry.adapter) {
+    return entry.adapter.checkAvailability();
+  }
+  const { status } = checkCli(entry.binary);
+  return { available: status === 'ok', transport: status === 'ok' ? 'native' : undefined, reason: status !== 'ok' ? status : undefined };
+}
+
 /** Split an agent list into {available, missing}. missing entries carry a `reason` field. */
 export function filterAvailable(agents) {
   const available = [];
@@ -93,6 +107,19 @@ export function stripFlags(args) {
 }
 
 export function runAgent(name, binary, args, parse = s => s) {
+  const entry = REGISTRY[name];
+
+  // If adapter is defined, delegate to it
+  if (entry?.adapter) {
+    return entry.adapter.invoke({ prompt: args.join(' ') }).then((result) => ({
+      name,
+      output: result.output,
+      error: result.error,
+      code: result.exitCode ?? 0,
+      transport: result.transport,
+    }));
+  }
+
   return new Promise(resolve => {
     const out = [];
     const err = [];
