@@ -107,19 +107,6 @@ export function stripFlags(args) {
 }
 
 export function runAgent(name, binary, args, parse = s => s) {
-  const entry = REGISTRY[name];
-
-  // If adapter is defined, delegate to it
-  if (entry?.adapter) {
-    return entry.adapter.invoke({ prompt: args.join(' ') }).then((result) => ({
-      name,
-      output: result.output,
-      error: result.error,
-      code: result.exitCode ?? 0,
-      transport: result.transport,
-    }));
-  }
-
   return new Promise(resolve => {
     const out = [];
     const err = [];

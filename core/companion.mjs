@@ -7,6 +7,7 @@ import {
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
 import { emit } from './observability.mjs';
+import { runCouncil } from './council.mjs';
 
 // Build a privacy-preserving description of the user's task for structured logs.
 // NDJSON is written to `~/.choreo/logs/` with 7-day retention — raw prompts can
@@ -64,7 +65,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     // --force and --no-verify" survive verbatim. `--` is an explicit delimiter:
     // every token after it is task, regardless of leading dashes.
     let jsonMode = false;
-    let nameEquals, modelEquals, effortEquals, resumeEquals, modeEquals;
+    let nameEquals, modelEquals, effortEquals, resumeEquals, modeEquals, transportEquals;
     const taskTokens = [];
     let afterDashDash = false;
     for (const a of rest) {
@@ -76,16 +77,17 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       if (a.startsWith('--effort='))  { effortEquals  = a.slice('--effort='.length);  continue; }
       if (a.startsWith('--resume='))  { resumeEquals  = a.slice('--resume='.length);  continue; }
       if (a.startsWith('--mode='))    { modeEquals    = a.slice('--mode='.length);    continue; }
+      if (a.startsWith('--transport=')) { transportEquals = a.slice('--transport='.length); continue; }
       taskTokens.push(a);
     }
     const task = taskTokens.join(' ').trim();
 
     if (!nameEquals) {
-      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>');
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] [--transport=acp|native] <task>');
       process.exit(1);
     }
     if (!task) {
-      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>');
+      console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] [--transport=acp|native] <task>');
       process.exit(1);
     }
 
@@ -148,8 +150,11 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block agent dispatch */ }
 
-    // If adapter is available, use it with full flag support
-    if (entry.adapter && availability.transport) {
+    // Use adapter only when --transport=acp is explicitly set
+    const transportFlag = rest.find((a) => a.startsWith('--transport='))?.split('=')[1];
+    const useAdapter = transportFlag === 'acp' && entry.adapter;
+
+    if (useAdapter && availability.transport) {
       const result = await entry.adapter.invoke({
         prompt: task,
         model: modelEquals,
@@ -223,42 +228,85 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   // ── council ─────────────────────────────────────────────────────────────────
 
   if (cmd === 'council') {
+    // Parse flags
     const jsonMode = rest.includes('--json');
-    const task = stripFlags(rest).join(' ').trim();
-    if (!task) { console.error('Usage: companion.mjs council <task>'); process.exit(1); }
+    const nonInteractive = rest.includes('--non-interactive');
+    const skipPreflight = rest.includes('--skip-preflight');
 
-    const agents = [
-      {
-        name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', '--output-format', 'stream-json', '--verbose',
-          `You are the CORRECTNESS reviewer in an LLM council.\n` +
-          `Focus on: logic errors, type safety, off-by-one bugs, unhandled edge cases, security issues.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--dangerously-skip-permissions'],
-        parse: parseClaudeStreamJson
-      },
-      {
-        name: 'codex', binary: REGISTRY.codex.binary,
-        args: ['exec',
-          `You are the SCOPE reviewer in an LLM council.\n` +
-          `Focus on: unnecessary complexity, premature abstractions, whether the smallest solution was chosen.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`]
-      },
-      {
-        name: 'opencode', binary: REGISTRY.opencode.binary,
-        args: ['run',
-          `You are the INTEGRATION reviewer in an LLM council.\n` +
-          `Focus on: how this fits with existing codebase patterns, dependency implications, integration risks.\n` +
-          `Be concise — bullet points preferred.\n\nTask: ${task}`,
-          '--dangerously-skip-permissions'],
-        parse: parseOpenCodeOutput
+    const membersFlag = rest.find((a) => a.startsWith('--members='))?.split('=')[1];
+    const members = membersFlag ? membersFlag.split(',').map((m) => m.trim()) : ['claude', 'codex'];
+
+    // Parse --model=member:model,...
+    const models = {};
+    const modelFlag = rest.find((a) => a.startsWith('--model='))?.split('=')[1];
+    if (modelFlag) {
+      for (const entry of modelFlag.split(',')) {
+        const [key, value] = entry.split(':');
+        if (key && value) models[key.trim()] = value.trim();
       }
-    ];
+    }
 
-    let available;
-    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
-    jsonMode ? printJSON('council', results) : printDelimited(results);
+    // Cross-validation: model keys must be in members
+    const orphanKeys = Object.keys(models).filter((k) => !members.includes(k));
+    if (orphanKeys.length > 0) {
+      console.error(`[council] ERROR: --model keys not in --members: ${orphanKeys.join(', ')}`);
+      process.exit(1);
+    }
+
+    const claudeRoleFlag = rest.find((a) => a.startsWith('--claude-role='))?.split('=')[1];
+    const claudeRole = claudeRoleFlag === 'moderator' ? 'moderator' : 'debater';
+
+    const roundsFlag = rest.find((a) => a.startsWith('--rounds='))?.split('=')[1];
+    const rounds = roundsFlag ? Math.min(5, Math.max(1, parseInt(roundsFlag, 10) || 3)) : 3;
+
+    // Task is everything after flags
+    const flagPrefixes = ['--members=', '--model=', '--claude-role=', '--rounds=', '--skip-preflight', '--non-interactive', '--json'];
+    const taskTokens = rest.filter((a) => !flagPrefixes.some((p) => a === p || a.startsWith(p)));
+    const task = taskTokens.join(' ').trim();
+
+    if (!task) {
+      console.error('Usage: companion.mjs council [--members=...] [--model=...] [--rounds=N] [--skip-preflight] [--non-interactive] <task>');
+      process.exit(1);
+    }
+
+    // Ensure claude is present unless moderator role
+    if (!members.includes('claude') && claudeRole !== 'moderator') {
+      members.unshift('claude');
+    }
+
+    // Phase 0.25: Confirm launch plan (skip in non-interactive)
+    if (!nonInteractive) {
+      console.log(`[council] Launch plan`);
+      console.log(`  Topic : ${task.slice(0, 60)}`);
+      console.log(`  Members: ${members.join(', ')}`);
+      console.log(`  Rounds: ${rounds}`);
+      console.log(`  Claude role: ${claudeRole}`);
+      console.log(`  Skip preflight: ${skipPreflight}`);
+      console.log(`\nLaunching council...`);
+    }
+
+    try {
+      const result = await runCouncil({
+        task,
+        members,
+        models,
+        claudeRole,
+        rounds,
+        skipPreflight,
+        nonInteractive,
+        jsonMode,
+      });
+
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: 'council', slug: result.slug, confidence: result.confidence, rounds: result.rounds, decision: result.decision }));
+      } else {
+        console.log(result.decision);
+      }
+      process.exit(0);
+    } catch (err) {
+      console.error(`[council] Error: ${err.message}`);
+      process.exit(1);
+    }
   }
 
   // ── review ───────────────────────────────────────────────────────────────────

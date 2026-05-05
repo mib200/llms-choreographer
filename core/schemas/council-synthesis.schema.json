@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Council Synthesis",
+  "description": "Structured JSON synthesis output (Evolution G)",
+  "type": "object",
+  "required": ["consensus", "key_agreements", "resolved_debates", "remaining_disagreements", "confidence", "debate_summary"],
+  "properties": {
+    "consensus": {
+      "type": "string",
+      "description": "The synthesized consensus statement"
+    },
+    "key_agreements": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Points all debaters agreed on"
+    },
+    "resolved_debates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic": { "type": "string" },
+          "resolution": { "type": "string" }
+        }
+      },
+      "description": "Debates that were resolved during the council"
+    },
+    "remaining_disagreements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic": { "type": "string" },
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "member": { "type": "string" },
+                "position": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "description": "Disagreements that persist (Evolution E — minority position preservation)"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["FULL", "PARTIAL", "DEADLOCK"],
+      "description": "Confidence level of the synthesis"
+    },
+    "debate_summary": {
+      "type": "object",
+      "properties": {
+        "rounds": { "type": "integer" },
+        "members": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "phases_completed": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
