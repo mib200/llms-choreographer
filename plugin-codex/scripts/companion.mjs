@@ -12,7 +12,7 @@ var __export = (target, all) => {
 
 // core/companion.mjs
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createHash } from "node:crypto";
 
 // core/parsers.mjs
@@ -97,7 +97,7 @@ var AgentAdapter = class {
 // core/agents/acp-client.mjs
 import { spawn } from "node:child_process";
 
-// ../../../node_modules/zod/v4/classic/external.js
+// node_modules/zod/v4/classic/external.js
 var external_exports = {};
 __export(external_exports, {
   $brand: () => $brand,
@@ -340,7 +340,7 @@ __export(external_exports, {
   xor: () => xor
 });
 
-// ../../../node_modules/zod/v4/core/index.js
+// node_modules/zod/v4/core/index.js
 var core_exports2 = {};
 __export(core_exports2, {
   $ZodAny: () => $ZodAny,
@@ -619,7 +619,7 @@ __export(core_exports2, {
   version: () => version
 });
 
-// ../../../node_modules/zod/v4/core/core.js
+// node_modules/zod/v4/core/core.js
 var _a;
 var NEVER = /* @__PURE__ */ Object.freeze({
   status: "aborted"
@@ -696,7 +696,7 @@ function config(newConfig) {
   return globalConfig;
 }
 
-// ../../../node_modules/zod/v4/core/util.js
+// node_modules/zod/v4/core/util.js
 var util_exports = {};
 __export(util_exports, {
   BIGINT_FORMAT_RANGES: () => BIGINT_FORMAT_RANGES,
@@ -1392,7 +1392,7 @@ var Class = class {
   }
 };
 
-// ../../../node_modules/zod/v4/core/errors.js
+// node_modules/zod/v4/core/errors.js
 var initializer = (inst, def) => {
   inst.name = "$ZodError";
   Object.defineProperty(inst, "_zod", {
@@ -1531,7 +1531,7 @@ function prettifyError(error51) {
   return lines.join("\n");
 }
 
-// ../../../node_modules/zod/v4/core/parse.js
+// node_modules/zod/v4/core/parse.js
 var _parse = (_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
   const result = schema._zod.run({ value, issues: [] }, ctx);
@@ -1619,7 +1619,7 @@ var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
 };
 var safeDecodeAsync = /* @__PURE__ */ _safeDecodeAsync($ZodRealError);
 
-// ../../../node_modules/zod/v4/core/regexes.js
+// node_modules/zod/v4/core/regexes.js
 var regexes_exports = {};
 __export(regexes_exports, {
   base64: () => base64,
@@ -1778,7 +1778,7 @@ var sha512_hex = /^[0-9a-fA-F]{128}$/;
 var sha512_base64 = /* @__PURE__ */ fixedBase64(86, "==");
 var sha512_base64url = /* @__PURE__ */ fixedBase64url(86);
 
-// ../../../node_modules/zod/v4/core/checks.js
+// node_modules/zod/v4/core/checks.js
 var $ZodCheck = /* @__PURE__ */ $constructor("$ZodCheck", (inst, def) => {
   var _a3;
   inst._zod ?? (inst._zod = {});
@@ -2326,7 +2326,7 @@ var $ZodCheckOverwrite = /* @__PURE__ */ $constructor("$ZodCheckOverwrite", (ins
   };
 });
 
-// ../../../node_modules/zod/v4/core/doc.js
+// node_modules/zod/v4/core/doc.js
 var Doc = class {
   constructor(args = []) {
     this.content = [];
@@ -2362,14 +2362,14 @@ var Doc = class {
   }
 };
 
-// ../../../node_modules/zod/v4/core/versions.js
+// node_modules/zod/v4/core/versions.js
 var version = {
   major: 4,
   minor: 4,
   patch: 3
 };
 
-// ../../../node_modules/zod/v4/core/schemas.js
+// node_modules/zod/v4/core/schemas.js
 var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a3;
   inst ?? (inst = {});
@@ -4462,7 +4462,7 @@ function handleRefineResult(result, payload, input, inst) {
   }
 }
 
-// ../../../node_modules/zod/v4/locales/index.js
+// node_modules/zod/v4/locales/index.js
 var locales_exports = {};
 __export(locales_exports, {
   ar: () => ar_default,
@@ -4519,7 +4519,7 @@ __export(locales_exports, {
   zhTW: () => zh_TW_default
 });
 
-// ../../../node_modules/zod/v4/locales/ar.js
+// node_modules/zod/v4/locales/ar.js
 var error = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0641", verb: "\u0623\u0646 \u064A\u062D\u0648\u064A" },
@@ -4626,7 +4626,7 @@ function ar_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/az.js
+// node_modules/zod/v4/locales/az.js
 var error2 = () => {
   const Sizable = {
     string: { unit: "simvol", verb: "olmal\u0131d\u0131r" },
@@ -4732,7 +4732,7 @@ function az_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/be.js
+// node_modules/zod/v4/locales/be.js
 function getBelarusianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -4889,7 +4889,7 @@ function be_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/bg.js
+// node_modules/zod/v4/locales/bg.js
 var error4 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0430", verb: "\u0434\u0430 \u0441\u044A\u0434\u044A\u0440\u0436\u0430" },
@@ -5010,7 +5010,7 @@ function bg_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ca.js
+// node_modules/zod/v4/locales/ca.js
 var error5 = () => {
   const Sizable = {
     string: { unit: "car\xE0cters", verb: "contenir" },
@@ -5119,7 +5119,7 @@ function ca_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/cs.js
+// node_modules/zod/v4/locales/cs.js
 var error6 = () => {
   const Sizable = {
     string: { unit: "znak\u016F", verb: "m\xEDt" },
@@ -5231,7 +5231,7 @@ function cs_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/da.js
+// node_modules/zod/v4/locales/da.js
 var error7 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "havde" },
@@ -5347,7 +5347,7 @@ function da_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/de.js
+// node_modules/zod/v4/locales/de.js
 var error8 = () => {
   const Sizable = {
     string: { unit: "Zeichen", verb: "zu haben" },
@@ -5456,7 +5456,7 @@ function de_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/el.js
+// node_modules/zod/v4/locales/el.js
 var error9 = () => {
   const Sizable = {
     string: { unit: "\u03C7\u03B1\u03C1\u03B1\u03BA\u03C4\u03AE\u03C1\u03B5\u03C2", verb: "\u03BD\u03B1 \u03AD\u03C7\u03B5\u03B9" },
@@ -5566,7 +5566,7 @@ function el_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/en.js
+// node_modules/zod/v4/locales/en.js
 var error10 = () => {
   const Sizable = {
     string: { unit: "characters", verb: "to have" },
@@ -5679,7 +5679,7 @@ function en_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/eo.js
+// node_modules/zod/v4/locales/eo.js
 var error11 = () => {
   const Sizable = {
     string: { unit: "karaktrojn", verb: "havi" },
@@ -5789,7 +5789,7 @@ function eo_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/es.js
+// node_modules/zod/v4/locales/es.js
 var error12 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "tener" },
@@ -5922,7 +5922,7 @@ function es_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/fa.js
+// node_modules/zod/v4/locales/fa.js
 var error13 = () => {
   const Sizable = {
     string: { unit: "\u06A9\u0627\u0631\u0627\u06A9\u062A\u0631", verb: "\u062F\u0627\u0634\u062A\u0647 \u0628\u0627\u0634\u062F" },
@@ -6037,7 +6037,7 @@ function fa_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/fi.js
+// node_modules/zod/v4/locales/fi.js
 var error14 = () => {
   const Sizable = {
     string: { unit: "merkki\xE4", subject: "merkkijonon" },
@@ -6150,7 +6150,7 @@ function fi_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/fr.js
+// node_modules/zod/v4/locales/fr.js
 var error15 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -6276,7 +6276,7 @@ function fr_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/fr-CA.js
+// node_modules/zod/v4/locales/fr-CA.js
 var error16 = () => {
   const Sizable = {
     string: { unit: "caract\xE8res", verb: "avoir" },
@@ -6384,7 +6384,7 @@ function fr_CA_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/he.js
+// node_modules/zod/v4/locales/he.js
 var error17 = () => {
   const TypeNames = {
     string: { label: "\u05DE\u05D7\u05E8\u05D5\u05D6\u05EA", gender: "f" },
@@ -6579,7 +6579,7 @@ function he_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/hr.js
+// node_modules/zod/v4/locales/hr.js
 var error18 = () => {
   const Sizable = {
     string: { unit: "znakova", verb: "imati" },
@@ -6702,7 +6702,7 @@ function hr_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/hu.js
+// node_modules/zod/v4/locales/hu.js
 var error19 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "legyen" },
@@ -6811,7 +6811,7 @@ function hu_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/hy.js
+// node_modules/zod/v4/locales/hy.js
 function getArmenianPlural(count, one, many) {
   return Math.abs(count) === 1 ? one : many;
 }
@@ -6959,7 +6959,7 @@ function hy_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/id.js
+// node_modules/zod/v4/locales/id.js
 var error21 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "memiliki" },
@@ -7066,7 +7066,7 @@ function id_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/is.js
+// node_modules/zod/v4/locales/is.js
 var error22 = () => {
   const Sizable = {
     string: { unit: "stafi", verb: "a\xF0 hafa" },
@@ -7176,7 +7176,7 @@ function is_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/it.js
+// node_modules/zod/v4/locales/it.js
 var error23 = () => {
   const Sizable = {
     string: { unit: "caratteri", verb: "avere" },
@@ -7285,7 +7285,7 @@ function it_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ja.js
+// node_modules/zod/v4/locales/ja.js
 var error24 = () => {
   const Sizable = {
     string: { unit: "\u6587\u5B57", verb: "\u3067\u3042\u308B" },
@@ -7393,7 +7393,7 @@ function ja_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ka.js
+// node_modules/zod/v4/locales/ka.js
 var error25 = () => {
   const Sizable = {
     string: { unit: "\u10E1\u10D8\u10DB\u10D1\u10DD\u10DA\u10DD", verb: "\u10E3\u10DC\u10D3\u10D0 \u10E8\u10D4\u10D8\u10EA\u10D0\u10D5\u10D3\u10D4\u10E1" },
@@ -7506,7 +7506,7 @@ function ka_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/km.js
+// node_modules/zod/v4/locales/km.js
 var error26 = () => {
   const Sizable = {
     string: { unit: "\u178F\u17BD\u17A2\u1780\u17D2\u179F\u179A", verb: "\u1782\u17BD\u179A\u1798\u17B6\u1793" },
@@ -7617,12 +7617,12 @@ function km_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/kh.js
+// node_modules/zod/v4/locales/kh.js
 function kh_default() {
   return km_default();
 }
 
-// ../../../node_modules/zod/v4/locales/ko.js
+// node_modules/zod/v4/locales/ko.js
 var error27 = () => {
   const Sizable = {
     string: { unit: "\uBB38\uC790", verb: "to have" },
@@ -7734,7 +7734,7 @@ function ko_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/lt.js
+// node_modules/zod/v4/locales/lt.js
 var capitalizeFirstCharacter = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
@@ -7938,7 +7938,7 @@ function lt_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/mk.js
+// node_modules/zod/v4/locales/mk.js
 var error29 = () => {
   const Sizable = {
     string: { unit: "\u0437\u043D\u0430\u0446\u0438", verb: "\u0434\u0430 \u0438\u043C\u0430\u0430\u0442" },
@@ -8048,7 +8048,7 @@ function mk_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ms.js
+// node_modules/zod/v4/locales/ms.js
 var error30 = () => {
   const Sizable = {
     string: { unit: "aksara", verb: "mempunyai" },
@@ -8156,7 +8156,7 @@ function ms_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/nl.js
+// node_modules/zod/v4/locales/nl.js
 var error31 = () => {
   const Sizable = {
     string: { unit: "tekens", verb: "heeft" },
@@ -8267,7 +8267,7 @@ function nl_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/no.js
+// node_modules/zod/v4/locales/no.js
 var error32 = () => {
   const Sizable = {
     string: { unit: "tegn", verb: "\xE5 ha" },
@@ -8376,7 +8376,7 @@ function no_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ota.js
+// node_modules/zod/v4/locales/ota.js
 var error33 = () => {
   const Sizable = {
     string: { unit: "harf", verb: "olmal\u0131d\u0131r" },
@@ -8486,7 +8486,7 @@ function ota_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ps.js
+// node_modules/zod/v4/locales/ps.js
 var error34 = () => {
   const Sizable = {
     string: { unit: "\u062A\u0648\u06A9\u064A", verb: "\u0648\u0644\u0631\u064A" },
@@ -8601,7 +8601,7 @@ function ps_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/pl.js
+// node_modules/zod/v4/locales/pl.js
 var error35 = () => {
   const Sizable = {
     string: { unit: "znak\xF3w", verb: "mie\u0107" },
@@ -8711,7 +8711,7 @@ function pl_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/pt.js
+// node_modules/zod/v4/locales/pt.js
 var error36 = () => {
   const Sizable = {
     string: { unit: "caracteres", verb: "ter" },
@@ -8820,7 +8820,7 @@ function pt_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ro.js
+// node_modules/zod/v4/locales/ro.js
 var error37 = () => {
   const Sizable = {
     string: { unit: "caractere", verb: "s\u0103 aib\u0103" },
@@ -8940,7 +8940,7 @@ function ro_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ru.js
+// node_modules/zod/v4/locales/ru.js
 function getRussianPlural(count, one, few, many) {
   const absCount = Math.abs(count);
   const lastDigit = absCount % 10;
@@ -9097,7 +9097,7 @@ function ru_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/sl.js
+// node_modules/zod/v4/locales/sl.js
 var error39 = () => {
   const Sizable = {
     string: { unit: "znakov", verb: "imeti" },
@@ -9207,7 +9207,7 @@ function sl_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/sv.js
+// node_modules/zod/v4/locales/sv.js
 var error40 = () => {
   const Sizable = {
     string: { unit: "tecken", verb: "att ha" },
@@ -9318,7 +9318,7 @@ function sv_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ta.js
+// node_modules/zod/v4/locales/ta.js
 var error41 = () => {
   const Sizable = {
     string: { unit: "\u0B8E\u0BB4\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0B95\u0BCD\u0B95\u0BB3\u0BCD", verb: "\u0B95\u0BCA\u0BA3\u0BCD\u0B9F\u0BBF\u0BB0\u0BC1\u0B95\u0BCD\u0B95 \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD" },
@@ -9429,7 +9429,7 @@ function ta_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/th.js
+// node_modules/zod/v4/locales/th.js
 var error42 = () => {
   const Sizable = {
     string: { unit: "\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23", verb: "\u0E04\u0E27\u0E23\u0E21\u0E35" },
@@ -9540,7 +9540,7 @@ function th_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/tr.js
+// node_modules/zod/v4/locales/tr.js
 var error43 = () => {
   const Sizable = {
     string: { unit: "karakter", verb: "olmal\u0131" },
@@ -9646,7 +9646,7 @@ function tr_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/uk.js
+// node_modules/zod/v4/locales/uk.js
 var error44 = () => {
   const Sizable = {
     string: { unit: "\u0441\u0438\u043C\u0432\u043E\u043B\u0456\u0432", verb: "\u043C\u0430\u0442\u0438\u043C\u0435" },
@@ -9755,12 +9755,12 @@ function uk_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/ua.js
+// node_modules/zod/v4/locales/ua.js
 function ua_default() {
   return uk_default();
 }
 
-// ../../../node_modules/zod/v4/locales/ur.js
+// node_modules/zod/v4/locales/ur.js
 var error45 = () => {
   const Sizable = {
     string: { unit: "\u062D\u0631\u0648\u0641", verb: "\u06C1\u0648\u0646\u0627" },
@@ -9871,7 +9871,7 @@ function ur_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/uz.js
+// node_modules/zod/v4/locales/uz.js
 var error46 = () => {
   const Sizable = {
     string: { unit: "belgi", verb: "bo\u2018lishi kerak" },
@@ -9982,7 +9982,7 @@ function uz_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/vi.js
+// node_modules/zod/v4/locales/vi.js
 var error47 = () => {
   const Sizable = {
     string: { unit: "k\xFD t\u1EF1", verb: "c\xF3" },
@@ -10091,7 +10091,7 @@ function vi_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/zh-CN.js
+// node_modules/zod/v4/locales/zh-CN.js
 var error48 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u7B26", verb: "\u5305\u542B" },
@@ -10201,7 +10201,7 @@ function zh_CN_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/zh-TW.js
+// node_modules/zod/v4/locales/zh-TW.js
 var error49 = () => {
   const Sizable = {
     string: { unit: "\u5B57\u5143", verb: "\u64C1\u6709" },
@@ -10309,7 +10309,7 @@ function zh_TW_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/locales/yo.js
+// node_modules/zod/v4/locales/yo.js
 var error50 = () => {
   const Sizable = {
     string: { unit: "\xE0mi", verb: "n\xED" },
@@ -10417,7 +10417,7 @@ function yo_default() {
   };
 }
 
-// ../../../node_modules/zod/v4/core/registries.js
+// node_modules/zod/v4/core/registries.js
 var _a2;
 var $output = /* @__PURE__ */ Symbol("ZodOutput");
 var $input = /* @__PURE__ */ Symbol("ZodInput");
@@ -10467,7 +10467,7 @@ function registry() {
 (_a2 = globalThis).__zod_globalRegistry ?? (_a2.__zod_globalRegistry = registry());
 var globalRegistry = globalThis.__zod_globalRegistry;
 
-// ../../../node_modules/zod/v4/core/api.js
+// node_modules/zod/v4/core/api.js
 // @__NO_SIDE_EFFECTS__
 function _string(Class2, params) {
   return new Class2({
@@ -11506,7 +11506,7 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
   return inst;
 }
 
-// ../../../node_modules/zod/v4/core/to-json-schema.js
+// node_modules/zod/v4/core/to-json-schema.js
 function initializeContext(params) {
   let target = params?.target ?? "draft-2020-12";
   if (target === "draft-4")
@@ -11865,7 +11865,7 @@ var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) =
   return finalize(ctx, schema);
 };
 
-// ../../../node_modules/zod/v4/core/json-schema-processors.js
+// node_modules/zod/v4/core/json-schema-processors.js
 var formatMap = {
   guid: "uuid",
   url: "uri",
@@ -12409,7 +12409,7 @@ function toJSONSchema(input, params) {
   return finalize(ctx, input);
 }
 
-// ../../../node_modules/zod/v4/core/json-schema-generator.js
+// node_modules/zod/v4/core/json-schema-generator.js
 var JSONSchemaGenerator = class {
   /** @deprecated Access via ctx instead */
   get metadataRegistry() {
@@ -12484,10 +12484,10 @@ var JSONSchemaGenerator = class {
   }
 };
 
-// ../../../node_modules/zod/v4/core/json-schema.js
+// node_modules/zod/v4/core/json-schema.js
 var json_schema_exports = {};
 
-// ../../../node_modules/zod/v4/classic/schemas.js
+// node_modules/zod/v4/classic/schemas.js
 var schemas_exports2 = {};
 __export(schemas_exports2, {
   ZodAny: () => ZodAny,
@@ -12658,7 +12658,7 @@ __export(schemas_exports2, {
   xor: () => xor
 });
 
-// ../../../node_modules/zod/v4/classic/checks.js
+// node_modules/zod/v4/classic/checks.js
 var checks_exports2 = {};
 __export(checks_exports2, {
   endsWith: () => _endsWith,
@@ -12692,7 +12692,7 @@ __export(checks_exports2, {
   uppercase: () => _uppercase
 });
 
-// ../../../node_modules/zod/v4/classic/iso.js
+// node_modules/zod/v4/classic/iso.js
 var iso_exports = {};
 __export(iso_exports, {
   ZodISODate: () => ZodISODate,
@@ -12733,7 +12733,7 @@ function duration2(params) {
   return _isoDuration(ZodISODuration, params);
 }
 
-// ../../../node_modules/zod/v4/classic/errors.js
+// node_modules/zod/v4/classic/errors.js
 var initializer2 = (inst, issues) => {
   $ZodError.init(inst, issues);
   inst.name = "ZodError";
@@ -12773,7 +12773,7 @@ var ZodRealError = /* @__PURE__ */ $constructor("ZodError", initializer2, {
   Parent: Error
 });
 
-// ../../../node_modules/zod/v4/classic/parse.js
+// node_modules/zod/v4/classic/parse.js
 var parse2 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
@@ -12787,7 +12787,7 @@ var safeDecode2 = /* @__PURE__ */ _safeDecode(ZodRealError);
 var safeEncodeAsync2 = /* @__PURE__ */ _safeEncodeAsync(ZodRealError);
 var safeDecodeAsync2 = /* @__PURE__ */ _safeDecodeAsync(ZodRealError);
 
-// ../../../node_modules/zod/v4/classic/schemas.js
+// node_modules/zod/v4/classic/schemas.js
 var _installedGroups = /* @__PURE__ */ new WeakMap();
 function _installLazyMethods(inst, group, methods) {
   const proto = Object.getPrototypeOf(inst);
@@ -14077,7 +14077,7 @@ function preprocess(fn, schema) {
   });
 }
 
-// ../../../node_modules/zod/v4/classic/compat.js
+// node_modules/zod/v4/classic/compat.js
 var ZodIssueCode = {
   invalid_type: "invalid_type",
   too_big: "too_big",
@@ -14103,7 +14103,7 @@ var ZodFirstPartyTypeKind;
 /* @__PURE__ */ (function(ZodFirstPartyTypeKind2) {
 })(ZodFirstPartyTypeKind || (ZodFirstPartyTypeKind = {}));
 
-// ../../../node_modules/zod/v4/classic/from-json-schema.js
+// node_modules/zod/v4/classic/from-json-schema.js
 var z = {
   ...schemas_exports2,
   ...checks_exports2,
@@ -14583,7 +14583,7 @@ function fromJSONSchema(schema, params) {
   return convertSchema(normalized, ctx);
 }
 
-// ../../../node_modules/zod/v4/classic/coerce.js
+// node_modules/zod/v4/classic/coerce.js
 var coerce_exports = {};
 __export(coerce_exports, {
   bigint: () => bigint3,
@@ -14608,10 +14608,10 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// ../../../node_modules/zod/v4/classic/external.js
+// node_modules/zod/v4/classic/external.js
 config(en_default());
 
-// ../../../node_modules/@agentclientprotocol/sdk/dist/schema/index.js
+// node_modules/@agentclientprotocol/sdk/dist/schema/index.js
 var AGENT_METHODS = {
   authenticate: "authenticate",
   document_did_change: "document/didChange",
@@ -14655,7 +14655,7 @@ var CLIENT_METHODS = {
   terminal_wait_for_exit: "terminal/wait_for_exit"
 };
 
-// ../../../node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js
+// node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js
 var zAuthCapabilities = external_exports.object({
   _meta: external_exports.record(external_exports.string(), external_exports.unknown()).nullish(),
   terminal: external_exports.boolean().optional().default(false)
@@ -16080,7 +16080,7 @@ var zClientResponse = external_exports.union([
   })
 ]);
 
-// ../../../node_modules/@agentclientprotocol/sdk/dist/stream.js
+// node_modules/@agentclientprotocol/sdk/dist/stream.js
 function ndJsonStream(output, input) {
   const textEncoder = new TextEncoder();
   const textDecoder = new TextDecoder();
@@ -16145,7 +16145,7 @@ function ndJsonStream(output, input) {
   return { readable, writable };
 }
 
-// ../../../node_modules/@agentclientprotocol/sdk/dist/acp.js
+// node_modules/@agentclientprotocol/sdk/dist/acp.js
 var ClientSideConnection = class {
   connection;
   /**
@@ -17547,16 +17547,6 @@ function stripFlags(args) {
   return result;
 }
 function runAgent(name, binary, args, parse3 = (s) => s) {
-  const entry = REGISTRY[name];
-  if (entry?.adapter) {
-    return entry.adapter.invoke({ prompt: args.join(" ") }).then((result) => ({
-      name,
-      output: result.output,
-      error: result.error,
-      code: result.exitCode ?? 0,
-      transport: result.transport
-    }));
-  }
   return new Promise((resolve) => {
     const out = [];
     const err = [];
@@ -17845,9 +17835,14 @@ async function invokeMember(name, binary, prompt, args = []) {
     const proc = spawn6(binary, allArgs, { stdio: ["ignore", "pipe", "pipe"] });
     const out = [];
     const err = [];
+    const timer = setTimeout(() => {
+      proc.kill("SIGTERM");
+      resolve({ name, output: Buffer.concat(out).toString().trim(), error: "timeout", exitCode: 1 });
+    }, 3e4);
     proc.stdout.on("data", (d) => out.push(d));
     proc.stderr.on("data", (d) => err.push(d));
     proc.on("close", (code) => {
+      clearTimeout(timer);
       resolve({
         name,
         output: Buffer.concat(out).toString().trim(),
@@ -17856,6 +17851,7 @@ async function invokeMember(name, binary, prompt, args = []) {
       });
     });
     proc.on("error", (e) => {
+      clearTimeout(timer);
       resolve({ name, output: "", error: e.message, exitCode: 1 });
     });
   });
@@ -18077,6 +18073,203 @@ See debates/council/${slug}/raw/`
   return { decision, slug, confidence, rounds: actualRounds };
 }
 
+// core/goal-assistant.mjs
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3, existsSync as existsSync3 } from "node:fs";
+import { join as join3, dirname as dirname2 } from "node:path";
+import { fileURLToPath } from "node:url";
+var __dirname = dirname2(fileURLToPath(import.meta.url));
+var GOALS_SCHEMA = JSON.parse(
+  readFileSync3(join3(__dirname, "schemas/goals.schema.json"), "utf8")
+);
+var GOALS_DIR = ".choreographer";
+var VERIFIER_DIR = join3(GOALS_DIR, "verifier");
+async function runGoalAssistant({ rootDir, askQuestion, goal, planFile }) {
+  const answers = { scope: {}, claims: {} };
+  const scopeQuestions = [
+    { key: "produces", question: 'What should the builder produce? (e.g., "a React component", "a database migration")' },
+    { key: "done", question: 'What does "done" look like? (e.g., "all tests pass", "image renders correctly")' },
+    { key: "failure", question: 'What does failure look like? (e.g., "missing error handling", "schema mismatch")' }
+  ];
+  for (const q of scopeQuestions) {
+    const answer = await askQuestion(q.question);
+    answers.scope[q.key] = answer || "(not specified)";
+  }
+  const claims = extractClaims(answers.scope, goal);
+  answers.claims = claims;
+  const goalsJson = buildGoalsJson(claims);
+  const validated = parseStructuredOutput(JSON.stringify(goalsJson), GOALS_SCHEMA);
+  writeGoalsFiles(rootDir, validated, claims);
+  return validated;
+}
+function extractClaims(scope, inlineGoal) {
+  const claims = [];
+  let id = 1;
+  if (scope.done && scope.done !== "(not specified)") {
+    claims.push({
+      id: `c${id++}`,
+      claim: `Builder output satisfies: "${scope.done}"`,
+      verify: "llm",
+      confidence_threshold: 0.85
+    });
+  }
+  if (scope.failure && scope.failure !== "(not specified)") {
+    claims.push({
+      id: `c${id++}`,
+      claim: `Builder output does NOT exhibit: "${scope.failure}"`,
+      verify: "llm",
+      confidence_threshold: 0.85
+    });
+  }
+  if (inlineGoal) {
+    claims.push({
+      id: `c${id++}`,
+      claim: inlineGoal,
+      verify: "llm",
+      confidence_threshold: 0.85
+    });
+  }
+  return claims;
+}
+function buildGoalsJson(claims) {
+  return {
+    goals: claims.map((c) => ({
+      id: c.id,
+      description: c.claim,
+      verify: c.verify,
+      confidence_threshold: c.confidence_threshold
+    })),
+    confidence: 0.7,
+    source: "interview"
+  };
+}
+function writeGoalsFiles(rootDir, goalsJson, claims) {
+  const goalsPath = join3(rootDir, GOALS_DIR, "goals.json");
+  mkdirSync3(join3(rootDir, GOALS_DIR), { recursive: true });
+  writeFileSync2(goalsPath, JSON.stringify(goalsJson, null, 2), "utf8");
+  const verifierTypes = new Set(claims.map((c) => c.verify));
+  for (const type of verifierTypes) {
+    const dir = join3(rootDir, VERIFIER_DIR, type);
+    mkdirSync3(dir, { recursive: true });
+    const typeClaims = claims.filter((c) => c.verify === type);
+    const prompt = buildSystemPrompt(type, typeClaims);
+    writeFileSync2(join3(dir, "system-prompt.md"), prompt, "utf8");
+  }
+}
+function buildSystemPrompt(type, claims) {
+  return `# Verifier: ${type}
+
+You are a verifier in the Choreographer Verifier Loop.
+
+## Your Role
+Verify the following claims about the builder's output:
+
+${claims.map((c) => `- [${c.id}] ${c.claim}`).join("\n")}
+
+## Rules
+- After review, STOP. Do not fix the issues yourself.
+- Report your findings using the verifier report schema.
+- Be specific: cite file paths and line numbers where possible.
+- If you cannot verify a claim, explain what you would need.
+`;
+}
+function initGoalsFromPlan(rootDir, planPath) {
+  if (!existsSync3(planPath)) {
+    throw new Error(`Plan file not found: ${planPath}`);
+  }
+  const content = readFileSync3(planPath, "utf8");
+  const lines = content.split("\n");
+  const criteria = [];
+  let inCriteria = false;
+  for (const line of lines) {
+    if (/acceptance.?criteria/i.test(line)) {
+      inCriteria = true;
+      continue;
+    }
+    if (inCriteria && line.trim().startsWith("-")) {
+      criteria.push(line.trim().slice(1).trim());
+    }
+    if (inCriteria && line.trim() === "") {
+      inCriteria = false;
+    }
+  }
+  const claims = criteria.map((c, i) => ({
+    id: `c${i + 1}`,
+    claim: c,
+    verify: "llm",
+    confidence_threshold: 0.85
+  }));
+  const goalsJson = buildGoalsJson(claims);
+  goalsJson.source = "plan";
+  goalsJson.confidence = 0.8;
+  writeGoalsFiles(rootDir, goalsJson, claims);
+  return goalsJson;
+}
+
+// core/verifier/loop.mjs
+import { readFileSync as readFileSync4, writeFileSync as writeFileSync3, mkdirSync as mkdirSync4, existsSync as existsSync4, readdirSync as readdirSync3 } from "node:fs";
+import { join as join4, dirname as dirname3 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { randomUUID } from "node:crypto";
+var __dirname2 = dirname3(fileURLToPath2(import.meta.url));
+var VERIFIER_REPORT_SCHEMA = JSON.parse(
+  readFileSync4(join4(__dirname2, "../schemas/verifier-report.schema.json"), "utf8")
+);
+var DEFAULT_MAX_ROUNDS = 3;
+var VERIFIER_DIR2 = ".choreographer/verifier";
+function loadVerifierConfig(rootDir) {
+  const configPath = join4(rootDir, ".choreographer", "verifiers.yaml");
+  if (!existsSync4(configPath)) return [];
+  const content = readFileSync4(configPath, "utf8");
+  const verifiers = [];
+  let current = null;
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (trimmed.startsWith("- id:")) {
+      if (current) verifiers.push(current);
+      current = { id: trimmed.split(":")[1].trim(), depends_on: [], sandbox: {} };
+    } else if (current && trimmed.startsWith("depends_on:")) {
+      const val = trimmed.split(":")[1]?.trim();
+      current.depends_on = val === "[]" ? [] : (val || "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (current && trimmed.startsWith("max_rounds:")) {
+      current.max_rounds = parseInt(trimmed.split(":")[1].trim(), 10) || DEFAULT_MAX_ROUNDS;
+    } else if (current && trimmed.startsWith("description:")) {
+      current.description = trimmed.split(":").slice(1).join(":").trim().replace(/^["']|["']$/g, "");
+    } else if (current && trimmed.startsWith("allowed_script:")) {
+      current.allowed_script = trimmed.split(":")[1].trim();
+    } else if (current && trimmed.startsWith("triggers:")) {
+      const val = trimmed.split(":")[1]?.trim();
+      current.triggers = val === "[]" ? [] : (val || "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (current) verifiers.push(current);
+  for (const v of verifiers) {
+    if (!v.id) throw new Error("Verifier config missing id");
+    for (const dep of v.depends_on || []) {
+      if (!verifiers.find((vv) => vv.id === dep)) {
+        throw new Error(`Verifier "${v.id}" depends on unknown verifier "${dep}"`);
+      }
+    }
+  }
+  return verifiers;
+}
+function checkPendingFeedback(rootDir) {
+  const results = [];
+  const verifierRoot = join4(rootDir, VERIFIER_DIR2);
+  if (!existsSync4(verifierRoot)) return results;
+  for (const verifierId of readdirSync3(verifierRoot)) {
+    const dir = join4(verifierRoot, verifierId);
+    const files = readdirSync3(dir).filter((f) => f.startsWith("feedback-round-") && f.endsWith(".json"));
+    if (files.length === 0) continue;
+    const latest = files.sort().pop();
+    const round = parseInt(latest.replace("feedback-round-", "").replace(".json", ""), 10);
+    const content = readFileSync4(join4(dir, latest), "utf8");
+    const report = JSON.parse(content);
+    results.push({ verifier_id: verifierId, round, report });
+  }
+  return results;
+}
+
 // core/companion.mjs
 function describeTask(task) {
   return {
@@ -18084,7 +18277,7 @@ function describeTask(task) {
     task_length: task.length
   };
 }
-if (fileURLToPath(import.meta.url) === process.argv[1]) {
+if (fileURLToPath3(import.meta.url) === process.argv[1]) {
   const [, , cmd, ...rest] = process.argv;
   process.on("unhandledRejection", (err) => {
     console.error(err?.message ?? err);
@@ -18108,7 +18301,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   if (cmd === "agent") {
     let jsonMode = false;
-    let nameEquals, modelEquals, effortEquals, resumeEquals, modeEquals;
+    let nameEquals, modelEquals, effortEquals, resumeEquals, modeEquals, transportEquals;
     const taskTokens = [];
     let afterDashDash = false;
     for (const a of rest) {
@@ -18144,15 +18337,19 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         modeEquals = a.slice("--mode=".length);
         continue;
       }
+      if (a.startsWith("--transport=")) {
+        transportEquals = a.slice("--transport=".length);
+        continue;
+      }
       taskTokens.push(a);
     }
     const task = taskTokens.join(" ").trim();
     if (!nameEquals) {
-      console.error("Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>");
+      console.error("Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] [--transport=acp|native] <task>");
       process.exit(1);
     }
     if (!task) {
-      console.error("Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] <task>");
+      console.error("Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] [--resume=...] [--mode=...] [--transport=acp|native] <task>");
       process.exit(1);
     }
     const name = nameEquals;
@@ -18206,7 +18403,9 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch {
     }
-    if (entry.adapter && availability.transport) {
+    const transportFlag = rest.find((a) => a.startsWith("--transport="))?.split("=")[1];
+    const useAdapter = transportFlag === "acp" && entry.adapter;
+    if (useAdapter && availability.transport) {
       const result2 = await entry.adapter.invoke({
         prompt: task,
         model: modelEquals,
@@ -18333,6 +18532,7 @@ Launching council...`);
       } else {
         console.log(result.decision);
       }
+      process.exit(0);
     } catch (err) {
       console.error(`[council] Error: ${err.message}`);
       process.exit(1);
@@ -18583,6 +18783,65 @@ ${"\u2550".repeat(60)}`);
       console.log(`
 ${"\u2550".repeat(60)}`);
     }
+  }
+  if (cmd === "goals") {
+    const initFlag = rest.includes("--init");
+    const verifierFlag = rest.find((a) => a.startsWith("--verifier="))?.split("=")[1];
+    const goalFlag = rest.find((a) => a.startsWith("--goal="))?.split("=")[1];
+    const planFlag = rest.find((a) => a.startsWith("--plan="))?.split("=")[1];
+    if (initFlag) {
+      if (!planFlag) {
+        console.error("Usage: companion.mjs goals --init --plan=<path-to-plan.md>");
+        process.exit(1);
+      }
+      const goalsJson = initGoalsFromPlan(process.cwd(), planFlag);
+      console.log(`Goals initialized from plan: ${planFlag}`);
+      console.log(JSON.stringify(goalsJson, null, 2));
+      process.exit(0);
+    }
+    const askQuestion = async (question) => {
+      console.log(`[goals] ${question}`);
+      return "(not specified)";
+    };
+    try {
+      const goalsJson = await runGoalAssistant({
+        rootDir: process.cwd(),
+        askQuestion,
+        goal: goalFlag,
+        planFile: planFlag
+      });
+      console.log("Goals written to .choreographer/goals.json");
+      console.log(JSON.stringify(goalsJson, null, 2));
+      process.exit(0);
+    } catch (err) {
+      console.error(`[goals] Error: ${err.message}`);
+      process.exit(1);
+    }
+  }
+  if (cmd === "verify") {
+    const jsonMode = rest.includes("--json");
+    const autonomous = rest.includes("--autonomous");
+    const maxRoundsFlag = rest.find((a) => a.startsWith("--rounds="))?.split("=")[1];
+    const maxRounds = maxRoundsFlag ? parseInt(maxRoundsFlag, 10) : 3;
+    const verifiers = loadVerifierConfig(process.cwd());
+    if (verifiers.length === 0) {
+      console.error("[verify] No verifiers configured. Create .choreographer/verifiers.yaml");
+      process.exit(1);
+    }
+    const pending = checkPendingFeedback(process.cwd());
+    if (pending.length > 0 && !jsonMode) {
+      console.log(`[verify] Found ${pending.length} pending verifier feedback file(s):`);
+      for (const p of pending) {
+        console.log(`  - ${p.verifier_id} (round ${p.round})`);
+      }
+    }
+    console.log(`[verify] Running ${verifiers.length} verifier(s), max ${maxRounds} round(s)`);
+    if (autonomous) console.log("[verify] Autonomous mode enabled");
+    console.log("[verify] Verifier loop execution requires broker integration (Ship 4 in progress)");
+    if (jsonMode) {
+      console.log(JSON.stringify({ command: "verify", verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+    }
+    process.exit(0);
   }
   const known = ["check-all", "agent", "council", "review", "debug", "second-opinion", "vote", "verify", "goals", "adversarial-review"];
   if (!cmd || !known.includes(cmd)) {

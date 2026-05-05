@@ -8,6 +8,8 @@ import {
 } from './runners.mjs';
 import { emit } from './observability.mjs';
 import { runCouncil } from './council.mjs';
+import { runGoalAssistant, initGoalsFromPlan } from './goal-assistant.mjs';
+import { loadVerifierConfig, runVerifierLoop, checkPendingFeedback } from './verifier/loop.mjs';
 
 // Build a privacy-preserving description of the user's task for structured logs.
 // NDJSON is written to `~/.choreo/logs/` with 7-day retention — raw prompts can
@@ -522,6 +524,84 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
       console.log(`\n${'═'.repeat(60)}`);
     }
+  }
+
+  // ── goals ────────────────────────────────────────────────────────────────────
+
+  if (cmd === 'goals') {
+    const initFlag = rest.includes('--init');
+    const verifierFlag = rest.find((a) => a.startsWith('--verifier='))?.split('=')[1];
+    const goalFlag = rest.find((a) => a.startsWith('--goal='))?.split('=')[1];
+    const planFlag = rest.find((a) => a.startsWith('--plan='))?.split('=')[1];
+
+    if (initFlag) {
+      if (!planFlag) {
+        console.error('Usage: companion.mjs goals --init --plan=<path-to-plan.md>');
+        process.exit(1);
+      }
+      const goalsJson = initGoalsFromPlan(process.cwd(), planFlag);
+      console.log(`Goals initialized from plan: ${planFlag}`);
+      console.log(JSON.stringify(goalsJson, null, 2));
+      process.exit(0);
+    }
+
+    // Interactive mode
+    const askQuestion = async (question) => {
+      console.log(`[goals] ${question}`);
+      // In non-interactive mode, use default
+      return '(not specified)';
+    };
+
+    try {
+      const goalsJson = await runGoalAssistant({
+        rootDir: process.cwd(),
+        askQuestion,
+        goal: goalFlag,
+        planFile: planFlag,
+      });
+      console.log('Goals written to .choreographer/goals.json');
+      console.log(JSON.stringify(goalsJson, null, 2));
+      process.exit(0);
+    } catch (err) {
+      console.error(`[goals] Error: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
+  // ── verify ───────────────────────────────────────────────────────────────────
+
+  if (cmd === 'verify') {
+    const jsonMode = rest.includes('--json');
+    const autonomous = rest.includes('--autonomous');
+    const maxRoundsFlag = rest.find((a) => a.startsWith('--rounds='))?.split('=')[1];
+    const maxRounds = maxRoundsFlag ? parseInt(maxRoundsFlag, 10) : 3;
+
+    const verifiers = loadVerifierConfig(process.cwd());
+    if (verifiers.length === 0) {
+      console.error('[verify] No verifiers configured. Create .choreographer/verifiers.yaml');
+      process.exit(1);
+    }
+
+    // Check for pending feedback
+    const pending = checkPendingFeedback(process.cwd());
+    if (pending.length > 0 && !jsonMode) {
+      console.log(`[verify] Found ${pending.length} pending verifier feedback file(s):`);
+      for (const p of pending) {
+        console.log(`  - ${p.verifier_id} (round ${p.round})`);
+      }
+    }
+
+    // Run verifier loop (stub — actual runVerifier needs broker integration)
+    console.log(`[verify] Running ${verifiers.length} verifier(s), max ${maxRounds} round(s)`);
+    if (autonomous) console.log('[verify] Autonomous mode enabled');
+
+    // TODO: integrate with broker for actual verifier execution
+    console.log('[verify] Verifier loop execution requires broker integration (Ship 4 in progress)');
+
+    if (jsonMode) {
+      console.log(JSON.stringify({ command: 'verify', verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+    }
+    process.exit(0);
   }
 
   const known = ['check-all', 'agent', 'council', 'review', 'debug', 'second-opinion', 'vote', 'verify', 'goals', 'adversarial-review'];
