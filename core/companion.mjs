@@ -153,7 +153,10 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     } catch { /* observability must never block agent dispatch */ }
 
     // Propagate agent failure as process exit code so slash-command callers can detect it.
-    process.exit(typeof result.code === 'number' ? result.code : 0);
+    // Use `exitCode` (not `process.exit`) so buffered stdout from the agent output above
+    // flushes naturally before the process terminates. The remaining `if (cmd === ...)`
+    // branches below all short-circuit because cmd === 'agent', so this effectively returns.
+    process.exitCode = typeof result.code === 'number' ? result.code : 1;
   }
 
   // ── council ─────────────────────────────────────────────────────────────────

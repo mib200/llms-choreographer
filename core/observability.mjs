@@ -2,11 +2,23 @@ import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSyn
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const MAX_BYTES_PER_DAY = 100 * 1024 * 1024; // 100 MB
+const DEFAULT_MAX_BYTES_PER_DAY = 100 * 1024 * 1024; // 100 MB
 const RETENTION_DAYS = 7;
+
+// Matches "YYYY-MM-DD.ndjson" (seq undefined) or "YYYY-MM-DD.ndjson.<N>" (numbered backup).
+const LOG_NAME_RE = /^(\d{4}-\d{2}-\d{2})\.ndjson(?:\.(\d+))?$/;
 
 function logDir() {
   return process.env.CHOREO_LOG_DIR || join(homedir(), '.choreo', 'logs');
+}
+
+function maxBytesPerDay() {
+  const env = process.env.CHOREO_LOG_MAX_BYTES;
+  if (env) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_MAX_BYTES_PER_DAY;
 }
 
 function ensureDir() {
@@ -16,12 +28,47 @@ function ensureDir() {
   }
 }
 
+function dateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function todayFile() {
-  const today = new Date().toISOString().slice(0, 10);
-  return join(logDir(), `${today}.ndjson`);
+  return join(logDir(), `${dateKey()}.ndjson`);
+}
+
+// List every log artifact we manage in `dir`. Each entry: { name, date, seq } where
+// seq === 0 means the active day file, seq > 0 means a rotated numbered backup.
+function listLogFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    const m = LOG_NAME_RE.exec(name);
+    if (!m) continue;
+    out.push({ name, date: m[1], seq: m[2] ? parseInt(m[2], 10) : 0 });
+  }
+  return out;
+}
+
+// Return same-day files in chronological order: backups (seq 1..N, oldest→newest) then current (seq=0).
+function sameDayFilesOrdered(dir, dateStr) {
+  const files = listLogFiles(dir).filter(f => f.date === dateStr);
+  const backups = files.filter(f => f.seq > 0).sort((a, b) => a.seq - b.seq);
+  const current = files.find(f => f.seq === 0);
+  return current ? [...backups, current] : backups;
+}
+
+function nextBackupSeq(dir, dateStr) {
+  const files = listLogFiles(dir).filter(f => f.date === dateStr && f.seq > 0);
+  return files.reduce((max, f) => Math.max(max, f.seq), 0) + 1;
 }
 
 let rotatedThisProcess = false;
+
+// Test hook: allow a fresh process-retention sweep when ESM module caching would
+// otherwise keep `rotatedThisProcess` true across dynamically-imported tests.
+export function __resetForTest() {
+  rotatedThisProcess = false;
+}
 
 process.on('SIGUSR1', () => {
   try { rotate(); } catch { /* signal handler must not throw */ }
@@ -36,11 +83,9 @@ process.on('SIGUSR1', () => {
  * @param {string} [event.session_id] - Optional session identifier
  */
 export function emit(event) {
-  const entry = {
-    timestamp: new Date().toISOString(),
-    ...event,
-  };
-
+  const entry = { timestamp: new Date().toISOString(), ...event };
+  const line = JSON.stringify(entry) + '\n';
+  const dir = logDir();
   ensureDir();
 
   // Enforce retention once per process on first emit.
@@ -49,34 +94,39 @@ export function emit(event) {
     try { rotate(); } catch { /* retention sweep must not block emit */ }
   }
 
-  const file = todayFile();
+  const today = dateKey();
+  const file = join(dir, `${today}.ndjson`);
+  const cap = maxBytesPerDay();
 
-  // Rotate today's file to a numbered backup if it exceeds the cap.
-  if (existsSync(file)) {
-    const st = statSync(file);
-    if (st.size >= MAX_BYTES_PER_DAY) {
-      const rotatedName = `${file}.${Date.now()}`;
-      try { renameSync(file, rotatedName); } catch { /* if rename fails, append anyway */ }
-    }
+  // If the active file alone exceeds the cap, rotate it to the next sequential backup.
+  // Use a monotonic counter (not Date.now()) so rotations in the same millisecond don't collide.
+  // Aggregate storage is bounded by the 7-day retention sweep (see `rotate()`).
+  let curSize = 0;
+  try { curSize = statSync(file).size; } catch { /* file doesn't exist yet */ }
+  if (curSize >= cap) {
+    const seq = nextBackupSeq(dir, today);
+    const rotatedName = join(dir, `${today}.ndjson.${seq}`);
+    // Fail closed: if rename fails, let the outer emit() caller's try/catch swallow the event
+    // rather than silently writing past the cap into an oversized file.
+    renameSync(file, rotatedName);
   }
 
-  appendFileSync(file, JSON.stringify(entry) + '\n', 'utf8');
+  appendFileSync(file, line, 'utf8');
 }
 
 /**
  * Rotate old log files. Removes files older than RETENTION_DAYS.
- * Call this periodically or on startup.
+ * Call this periodically or on startup. Also invoked on SIGUSR1.
  */
 export function rotate() {
   const dir = logDir();
   if (!existsSync(dir)) return;
 
   const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  // Cover both base files ("YYYY-MM-DD.ndjson") and rotated backups ("YYYY-MM-DD.ndjson.<epoch>").
-  const files = readdirSync(dir).filter(f => f.includes('.ndjson'));
-
-  for (const file of files) {
-    const fullPath = join(dir, file);
+  // Only touch files matching our managed naming scheme. Avoids wiping unrelated
+  // artifacts that happen to contain ".ndjson" in their name (editor swap files, backups, etc.).
+  for (const f of listLogFiles(dir)) {
+    const fullPath = join(dir, f.name);
     let st;
     try { st = statSync(fullPath); } catch { continue; }
     if (st.mtimeMs < cutoff) {
@@ -93,14 +143,19 @@ export function logPath() {
 }
 
 /**
- * Read all events from a specific log file. Useful for tests.
+ * Read all events for a given date, stitched across numbered backups and the active file.
+ * Order is chronological: oldest backup first, active file last.
  */
 export function readEvents(dateStr) {
-  const file = join(logDir(), `${dateStr}.ndjson`);
-  if (!existsSync(file)) return [];
-  return readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(line => line.trim().length > 0)
-    .map(line => { try { return JSON.parse(line); } catch { return null; } })
-    .filter(Boolean);
+  const dir = logDir();
+  const out = [];
+  for (const f of sameDayFilesOrdered(dir, dateStr)) {
+    let text;
+    try { text = readFileSync(join(dir, f.name), 'utf8'); } catch { continue; }
+    for (const ln of text.split('\n')) {
+      if (!ln.trim()) continue;
+      try { out.push(JSON.parse(ln)); } catch { /* skip malformed line */ }
+    }
+  }
+  return out;
 }

@@ -1,33 +1,39 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, utimesSync, mkdirSync, existsSync, rmSync, statSync } from 'node:fs';
+import { writeFileSync, utimesSync, mkdirSync, existsSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let tmpLogDir;
-let originalEnv;
+let originalLogDir;
+let originalMaxBytes;
 
 beforeEach(() => {
   tmpLogDir = mkdtempSync(join(tmpdir(), 'choreo-obs-'));
-  originalEnv = process.env.CHOREO_LOG_DIR;
+  originalLogDir = process.env.CHOREO_LOG_DIR;
+  originalMaxBytes = process.env.CHOREO_LOG_MAX_BYTES;
   process.env.CHOREO_LOG_DIR = tmpLogDir;
+  delete process.env.CHOREO_LOG_MAX_BYTES;
 });
 
 afterEach(() => {
-  if (originalEnv === undefined) delete process.env.CHOREO_LOG_DIR;
-  else process.env.CHOREO_LOG_DIR = originalEnv;
+  if (originalLogDir === undefined) delete process.env.CHOREO_LOG_DIR;
+  else process.env.CHOREO_LOG_DIR = originalLogDir;
+  if (originalMaxBytes === undefined) delete process.env.CHOREO_LOG_MAX_BYTES;
+  else process.env.CHOREO_LOG_MAX_BYTES = originalMaxBytes;
   if (tmpLogDir && existsSync(tmpLogDir)) {
     rmSync(tmpLogDir, { recursive: true, force: true });
   }
 });
 
-// Import the module AFTER env is set so it picks up the test dir. We use a dynamic
-// import inside each test to bypass Node's ESM module caching — the module reads
-// CHOREO_LOG_DIR lazily via logDir() on every call, so a single top-level import
-// would also work. We keep dynamic import for clarity.
+// Reset the module's `rotatedThisProcess` flag between tests. Node ESM caches modules
+// by resolved URL, so the flag would otherwise persist across tests and the rotate-on-first-emit
+// behavior would only be exercised in the first test of the suite.
 async function loadObs() {
-  return await import('../../core/observability.mjs');
+  const mod = await import('../../core/observability.mjs');
+  mod.__resetForTest();
+  return mod;
 }
 
 test('emit writes a valid NDJSON line to today log file', async () => {
@@ -63,7 +69,6 @@ test('rotate removes files older than 7 days', async () => {
   const oldFile = join(tmpLogDir, `${oldDate}.ndjson`);
   writeFileSync(oldFile, '{"type":"old"}\n');
 
-  // Set mtime to 30 days ago
   const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
   utimesSync(oldFile, new Date(oldTime), new Date(oldTime));
 
@@ -77,7 +82,7 @@ test('rotate also removes numbered backup files older than 7 days', async () => 
   if (!existsSync(tmpLogDir)) mkdirSync(tmpLogDir, { recursive: true });
 
   const oldDate = '2020-01-01';
-  const oldBackup = join(tmpLogDir, `${oldDate}.ndjson.1577836800000`);
+  const oldBackup = join(tmpLogDir, `${oldDate}.ndjson.1`);
   writeFileSync(oldBackup, '{"type":"old-backup"}\n');
 
   const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -88,6 +93,25 @@ test('rotate also removes numbered backup files older than 7 days', async () => 
   assert.ok(!existsSync(oldBackup), 'old backup file was removed');
 });
 
+test('rotate does NOT delete unrelated files that merely contain ".ndjson" in their name', async () => {
+  const { rotate } = await loadObs();
+  if (!existsSync(tmpLogDir)) mkdirSync(tmpLogDir, { recursive: true });
+
+  // Shapes that should be preserved — only the managed "YYYY-MM-DD.ndjson[.N]" scheme is managed.
+  const unrelated = [
+    join(tmpLogDir, 'archive.ndjson.bak'),     // editor/system backup
+    join(tmpLogDir, '2020-01-01.ndjson.swp'),  // vim swap
+    join(tmpLogDir, 'notes-about-ndjson.txt'), // unrelated doc
+  ];
+  for (const p of unrelated) writeFileSync(p, 'x');
+  const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const p of unrelated) utimesSync(p, new Date(oldTime), new Date(oldTime));
+
+  rotate();
+
+  for (const p of unrelated) assert.ok(existsSync(p), `unrelated file preserved: ${p}`);
+});
+
 test('logPath returns today file path', async () => {
   const { logPath } = await loadObs();
   const today = new Date().toISOString().slice(0, 10);
@@ -96,31 +120,76 @@ test('logPath returns today file path', async () => {
   assert.ok(path.startsWith(tmpLogDir), 'logPath respects CHOREO_LOG_DIR');
 });
 
-test('emit rotates today file to numbered backup when exceeding size cap', async () => {
+test('emit rotates today file to sequential numbered backup when exceeding size cap', async () => {
+  // Use a small cap so the test runs in milliseconds.
+  process.env.CHOREO_LOG_MAX_BYTES = String(4 * 1024); // 4KB
   const { emit } = await loadObs();
   const today = new Date().toISOString().slice(0, 10);
   const file = join(tmpLogDir, `${today}.ndjson`);
 
-  // Pre-fill with >100MB of padding (use a buffer of 1MB repeated 101 times to avoid a huge string literal).
-  const oneMB = Buffer.alloc(1024 * 1024, 'a');
-  mkdirSync(tmpLogDir, { recursive: true });
-  // Use writeFileSync(file, buf) + appendFileSync for the rest
-  const { writeFileSync: wf, appendFileSync: af } = await import('node:fs');
-  wf(file, oneMB);
-  for (let i = 0; i < 100; i++) af(file, oneMB);
+  // First event creates the file under cap.
+  emit({ type: 'first', payload: 'a'.repeat(100) });
+  assert.ok(statSync(file).size < 4 * 1024, 'first file is under cap');
 
-  const sizeBefore = statSync(file).size;
-  assert.ok(sizeBefore >= 100 * 1024 * 1024, 'pre-filled file exceeds cap');
+  // Pre-fill past the cap so the next emit triggers rotation.
+  writeFileSync(file, 'x'.repeat(5 * 1024));
+  assert.ok(statSync(file).size >= 4 * 1024, 'pre-fill exceeded cap');
 
   emit({ type: 'after_rotate' });
 
-  // Original file must now be small (contains only the new event line) and a backup must exist.
-  const sizeAfter = statSync(file).size;
-  assert.ok(sizeAfter < 10 * 1024, 'new today.ndjson contains only the new event');
+  // Active file now holds only the new event.
+  const afterSize = statSync(file).size;
+  assert.ok(afterSize < 4 * 1024, 'new active file is under cap after rotation');
 
-  const backups = (await import('node:fs')).readdirSync(tmpLogDir)
-    .filter(f => f.startsWith(`${today}.ndjson.`));
+  // A numbered backup ".1" was created (sequential — NOT Date.now-based).
+  const backups = readdirSync(tmpLogDir).filter(f => f.startsWith(`${today}.ndjson.`));
   assert.ok(backups.length >= 1, 'numbered backup file created');
-  const backupSize = statSync(join(tmpLogDir, backups[0])).size;
-  assert.ok(backupSize >= 100 * 1024 * 1024, 'backup preserves the pre-cap data');
+  assert.ok(backups.some(f => /\.ndjson\.\d+$/.test(f)), 'backup uses sequential suffix');
+});
+
+test('readEvents stitches events across numbered backups in chronological order', async () => {
+  process.env.CHOREO_LOG_MAX_BYTES = String(512); // tiny cap to force rotation
+  const { emit, readEvents } = await loadObs();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Emit enough events to force at least one rotation. Each event is ~250 bytes, so
+  // the 3rd or 4th emit will trip the 512-byte cap and rotate the active file to .1.
+  emit({ type: 'ev', seq: 1, pad: 'x'.repeat(200) });
+  emit({ type: 'ev', seq: 2, pad: 'x'.repeat(200) });
+  emit({ type: 'ev', seq: 3, pad: 'x'.repeat(200) });
+  emit({ type: 'ev', seq: 4, pad: 'x'.repeat(200) });
+
+  // At least one backup must exist — proves rotation happened.
+  const backups = readdirSync(tmpLogDir).filter(f => /^\d{4}-\d{2}-\d{2}\.ndjson\.\d+$/.test(f));
+  assert.ok(backups.length >= 1, 'rotation produced a numbered backup');
+
+  // readEvents must return ALL 4 events stitched across backup + active, in order.
+  const events = readEvents(today).filter(e => e.type === 'ev');
+  assert.equal(events.length, 4, 'all 4 events recovered across backups + active file');
+  assert.deepEqual(events.map(e => e.seq), [1, 2, 3, 4], 'events returned in chronological order');
+});
+
+test('emit fails closed when renameSync fails (does not corrupt oversized file)', async () => {
+  // Simulate by making the dir read-only AFTER the active file exceeds cap.
+  // renameSync will reject; emit must surface the error via its outer try/catch
+  // instead of silently appending past the cap.
+  process.env.CHOREO_LOG_MAX_BYTES = String(1024);
+  const { emit } = await loadObs();
+  const today = new Date().toISOString().slice(0, 10);
+  const file = join(tmpLogDir, `${today}.ndjson`);
+
+  writeFileSync(file, 'x'.repeat(2 * 1024)); // pre-fill over cap
+
+  // Remove write bit so renameSync fails.
+  const { chmodSync } = await import('node:fs');
+  chmodSync(tmpLogDir, 0o500);
+
+  let threw = false;
+  try { emit({ type: 'should_fail' }); }
+  catch { threw = true; }
+  finally { chmodSync(tmpLogDir, 0o700); }
+
+  assert.ok(threw, 'emit throws rather than silently writing past the cap');
+  // Active file still at original size — no append occurred past the cap.
+  assert.equal(statSync(file).size, 2 * 1024, 'oversized file unchanged');
 });

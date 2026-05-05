@@ -140,10 +140,19 @@ function requireAvailable(agents, min = 2) {
 import { mkdirSync, appendFileSync, renameSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-var MAX_BYTES_PER_DAY = 100 * 1024 * 1024;
+var DEFAULT_MAX_BYTES_PER_DAY = 100 * 1024 * 1024;
 var RETENTION_DAYS = 7;
+var LOG_NAME_RE = /^(\d{4}-\d{2}-\d{2})\.ndjson(?:\.(\d+))?$/;
 function logDir() {
   return process.env.CHOREO_LOG_DIR || join(homedir(), ".choreo", "logs");
+}
+function maxBytesPerDay() {
+  const env = process.env.CHOREO_LOG_MAX_BYTES;
+  if (env) {
+    const n = parseInt(env, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_MAX_BYTES_PER_DAY;
 }
 function ensureDir() {
   const dir = logDir();
@@ -151,9 +160,22 @@ function ensureDir() {
     mkdirSync(dir, { recursive: true });
   }
 }
-function todayFile() {
-  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  return join(logDir(), `${today}.ndjson`);
+function dateKey() {
+  return (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+}
+function listLogFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    const m = LOG_NAME_RE.exec(name);
+    if (!m) continue;
+    out.push({ name, date: m[1], seq: m[2] ? parseInt(m[2], 10) : 0 });
+  }
+  return out;
+}
+function nextBackupSeq(dir, dateStr) {
+  const files = listLogFiles(dir).filter((f) => f.date === dateStr && f.seq > 0);
+  return files.reduce((max, f) => Math.max(max, f.seq), 0) + 1;
 }
 var rotatedThisProcess = false;
 process.on("SIGUSR1", () => {
@@ -163,10 +185,9 @@ process.on("SIGUSR1", () => {
   }
 });
 function emit(event) {
-  const entry = {
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    ...event
-  };
+  const entry = { timestamp: (/* @__PURE__ */ new Date()).toISOString(), ...event };
+  const line = JSON.stringify(entry) + "\n";
+  const dir = logDir();
   ensureDir();
   if (!rotatedThisProcess) {
     rotatedThisProcess = true;
@@ -175,26 +196,27 @@ function emit(event) {
     } catch {
     }
   }
-  const file = todayFile();
-  if (existsSync(file)) {
-    const st = statSync(file);
-    if (st.size >= MAX_BYTES_PER_DAY) {
-      const rotatedName = `${file}.${Date.now()}`;
-      try {
-        renameSync(file, rotatedName);
-      } catch {
-      }
-    }
+  const today = dateKey();
+  const file = join(dir, `${today}.ndjson`);
+  const cap = maxBytesPerDay();
+  let curSize = 0;
+  try {
+    curSize = statSync(file).size;
+  } catch {
   }
-  appendFileSync(file, JSON.stringify(entry) + "\n", "utf8");
+  if (curSize >= cap) {
+    const seq = nextBackupSeq(dir, today);
+    const rotatedName = join(dir, `${today}.ndjson.${seq}`);
+    renameSync(file, rotatedName);
+  }
+  appendFileSync(file, line, "utf8");
 }
 function rotate() {
   const dir = logDir();
   if (!existsSync(dir)) return;
   const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1e3;
-  const files = readdirSync(dir).filter((f) => f.includes(".ndjson"));
-  for (const file of files) {
-    const fullPath = join(dir, file);
+  for (const f of listLogFiles(dir)) {
+    const fullPath = join(dir, f.name);
     let st;
     try {
       st = statSync(fullPath);
@@ -328,7 +350,7 @@ ${"\u2550".repeat(60)}`);
       });
     } catch {
     }
-    process.exit(typeof result.code === "number" ? result.code : 0);
+    process.exitCode = typeof result.code === "number" ? result.code : 1;
   }
   if (cmd === "council") {
     const jsonMode = rest.includes("--json");
