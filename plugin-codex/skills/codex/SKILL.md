@@ -13,7 +13,7 @@ Use the choreo-codex skill: <task or prompt>
 
 ## What it does
 
-Runs `node scripts/companion.mjs council "<task>"` targeting Codex. Returns Codex's response.
+Runs `node scripts/companion.mjs agent --name=codex "<task>"`. Returns Codex's response.
 
 ## Example
 

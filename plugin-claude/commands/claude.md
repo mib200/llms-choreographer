@@ -4,4 +4,4 @@ argument-hint: <task or prompt to delegate>
 allowed-tools: Bash
 ---
 
-!bash -c 'node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" council "$ARGUMENTS"'
+!bash -c 'node "${CLAUDE_PLUGIN_ROOT}/scripts/companion.mjs" agent --name=claude "$ARGUMENTS"'
