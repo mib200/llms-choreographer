@@ -1,4 +1,4 @@
-import { mkdirSync, appendFileSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -39,7 +39,7 @@ export function emit(event) {
     const st = statSync(file);
     if (st.size >= MAX_BYTES_PER_DAY) {
       // Truncate and start fresh — old data preserved in prior days' files
-      appendFileSync(file, '', 'utf8');
+      writeFileSync(file, '', 'utf8');
     }
   }
 
@@ -82,5 +82,6 @@ export function readEvents(dateStr) {
   return readFileSync(file, 'utf8')
     .split('\n')
     .filter(line => line.trim().length > 0)
-    .map(line => JSON.parse(line));
+    .map(line => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean);
 }

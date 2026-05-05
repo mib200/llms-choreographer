@@ -87,8 +87,8 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
       case 'codex': {
         const codexArgs = ['exec', task];
-        if (modelEquals) codexArgs.splice(1, 0, '--model', modelEquals);
-        if (effortEquals) codexArgs.splice(1, 0, '--effort', effortEquals);
+        if (effortEquals) codexArgs.splice(0, 0, '--effort', effortEquals);
+        if (modelEquals) codexArgs.splice(0, 0, '--model', modelEquals);
         args = codexArgs;
         break;
       }
@@ -104,7 +104,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
         process.exit(1);
     }
 
-    emit({ type: 'agent_invocation', name, model: modelEquals, effort: effortEquals, task });
+    try { emit({ type: 'agent_invocation', name, model: modelEquals, effort: effortEquals, task }); } catch { /* observability must never block agent dispatch */ }
 
     const result = await runAgent(name, entry.binary, args, parse);
 
@@ -123,12 +123,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       console.log(`\n${'═'.repeat(60)}`);
     }
 
-    emit({
+    try { emit({
       type: 'agent_completion',
       name,
       exitCode: result.code,
       hasError: !!result.error,
-    });
+    }); } catch { /* observability must never block agent dispatch */ }
   }
 
   // ── council ─────────────────────────────────────────────────────────────────
