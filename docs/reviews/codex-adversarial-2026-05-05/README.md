@@ -19,6 +19,8 @@ Output: 3 passes (base → fix-verification → final vs `main`) + this rollup.
 | 1 | merge `5371e012` base | [pass-1-base-merge.md](pass-1-base-merge.md) | 8 total: **1×P0, 5×P1, 2×P2** |
 | 2 | fix stack `94ca34d` → `b0c9696` → `36861d7` | [pass-2-fix-verification.md](pass-2-fix-verification.md) | 4/8 fixed, 2 partial, 2 unchanged, **2 new findings** (1×P1, 1×P2) |
 | 3 | final state vs `main` (residual + cross-commit) | [pass-3-final-vs-main.md](pass-3-final-vs-main.md) | 2 total: **1×P1 SHIP-1, 1×P3 SHIP-2** |
+| 4 | Phase D commit `3e8c9ef` re-review | [pass-4-phase-d-re-review.md](pass-4-phase-d-re-review.md) | FF1 **fully-fixed**, F6 **fully-fixed**, F8 **partial**; NFF1 P2 (env escape path), NFF2 P3 (race-dependent test) |
+| 5 | working-tree re-audit 2026-05-05 (post Phase D) | [pass-5-working-tree-reaudit.md](pass-5-working-tree-reaudit.md) | No new blockers. Re-confirms F8 residual + NFF1 only. |
 
 ## Disposition of Pass-1 findings after 3 hardening rounds
 
@@ -93,5 +95,7 @@ Items 3–4 can be rolled into the same Phase D commit; item 1 deserves its own 
 - [pass-1-base-merge.md](pass-1-base-merge.md) — independent Codex attack on merge `5371e012`
 - [pass-2-fix-verification.md](pass-2-fix-verification.md) — disposition matrix over Phase A/B/C
 - [pass-3-final-vs-main.md](pass-3-final-vs-main.md) — composed-state review + bundle parity + ship-gate call
+- [pass-4-phase-d-re-review.md](pass-4-phase-d-re-review.md) — Phase D (`3e8c9ef`) verification: FF1/F6 fully-fixed, F8 partial, NFF1/NFF2 documented
+- [pass-5-working-tree-reaudit.md](pass-5-working-tree-reaudit.md) — independent working-tree re-audit; no new blockers, re-confirms F8 residual + NFF1
 - Claude-panel comparator: `docs/solutions/developer-experience/xreview-multi-round-hardening-2026-05-05.md`
-- Commits in scope: `5371e012`, `94ca34d`, `b0c9696`, `36861d7` on `feature/acp-migration`
+- Commits in scope: `5371e012`, `94ca34d`, `b0c9696`, `36861d7`, `3e8c9ef` on `feature/acp-migration`

@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **llms-choreographer** (1125 symbols, 1311 relationships, 12 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **llms-choreographer** (1214 symbols, 1407 relationships, 12 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -45,3 +45,15 @@ This project is indexed by GitNexus as **llms-choreographer** (1125 symbols, 131
 ## Documented Solutions
 
 `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
+
+## Active Migration — ACP-First Plan
+
+Active plan: `docs/plans/2026-05-05-acp-migration-plan.md` (5 ships: foundation → ACP broker → council → verifier loop → adversarial review).
+
+**Ship 1 status:** SHIPPED on `feature/acp-migration` (commits `5371e012` → `3e8c9ef`). Codex cross-check passes 1–5 in `docs/reviews/codex-adversarial-2026-05-05/`.
+
+**Deferred Ship-1 residuals (do NOT fix between ships):**
+- **F8 residual** — `core/companion.mjs:70-79`: known flags (`--json`, `--model=`, `--effort=`) consumed after first positional task token.
+- **NFF1** — `core/runners.mjs:18-47`: env allowlist lacks additive opt-in (`CHOREO_AGENT_ENV_ALLOW`); users forced into full `CHOREO_AGENT_ENV_PASSTHROUGH=1` bypass for proxy/ADC vars.
+
+Re-test + fix only during **post-Ship-5 final plan review**, per plan §"Ship 1 — deferred to final plan review". Ship 1 → Ship 2 handoff proceeds with these as carried debt.

@@ -119,6 +119,19 @@ Instrumentation lives in `core/observability.mjs` (see Ship 1). Success-metric g
 - `parseClaudeStreamJson`, `parseOpenCodeOutput` in `core/parsers.mjs`
 - Fake-agent test harness `core/tests/helpers/fake-agents.mjs` extended to assert single-agent paths
 
+### Ship 1 — deferred to final plan review
+
+Codex adversarial reviews (Pass 4 `3e8c9ef` + Pass 5 working-tree re-audit 2026-05-05) cleared all Ship-1 SHIP-1 blockers (FF1 + F6 fully-fixed) but flagged **two residuals**. Per user directive: **do NOT fix between ships.** Re-test and fix only during the final plan review after Ship 5 (last phase) completes. Tracked here so nothing is lost:
+
+| Id | Title | Sev | Evidence | Fix direction |
+|----|-------|-----|----------|---------------|
+| **F8 residual** | Known companion flags (`--json`, `--model=`, `--effort=`) still consumed after the first positional task token | P2 | `core/companion.mjs:70-79`; Pass-5 repro: `agent --name=codex explain --json format` → task `explain format` + JSON flipped | Stop option parsing at first positional task token unless `--` is explicit. Add regression tests for `explain --json format`, `explain --model=foo`, `explain --effort=high` after the first positional token. Re-bundle all three plugin targets and pass `npm run check-bundles`. |
+| **NFF1** | Default env scrub drops common connectivity/auth env (`HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_*`). Only coarse `CHOREO_AGENT_ENV_PASSTHROUGH=1` bypass available — reintroduces F6 leak class. | P2 | `core/runners.mjs:18-47` | Add narrow additive allow mechanism, e.g. `CHOREO_AGENT_ENV_ALLOW=HTTPS_PROXY,NO_PROXY,GOOGLE_APPLICATION_CREDENTIALS`. Test that listed vars forward without forwarding unrelated secrets (`AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, `DATABASE_URL`). |
+
+Artifacts of record: `docs/reviews/codex-adversarial-2026-05-05/pass-4-phase-d-re-review.md`, `docs/reviews/codex-adversarial-2026-05-05/pass-5-working-tree-reaudit.md`.
+
+**Scheduling:** re-run `/codex:adversarial-review` + `npm test` (writable env) during the **post-Ship-5 final review**, not between ships. Ship 1 → Ship 2 handoff proceeds with these residuals carried forward as Ship-1 debt.
+
 ---
 
 ## Ship 2 — ACP-first broker + per-agent adapters with native fallbacks
