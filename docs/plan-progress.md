@@ -97,6 +97,60 @@
 
 ---
 
-## Ship 4 — Verifier Loop (NOT STARTED)
+## Ship 4 — Verifier Loop (SHIPPED)
+
+**Worktree:** `ship-4-verifier` → merged to `feature/acp-migration-2` at `ecc0b35`
+
+### What was done
+- Created `core/verifier/sanitizer.mjs` — feedback sanitizer:
+  - Strips instruction-like lines (imperative patterns)
+  - 2K character cap
+  - `containsInstructions()` detection helper
+- Created `core/verifier/composer.mjs` — parallel/sequential composition:
+  - Dependency graph resolution via `depends_on`
+  - Conflict detection on same claim ID with different verdicts
+  - Composite confidence as average of individual confidences
+  - Builds composite report with merged claims
+- Created `core/verifier/loop.mjs` — phase machine:
+  - `loadVerifierConfig()` — parses `.choreographer/verifiers.yaml`
+  - `runVerifierLoop()` — trigger → compose → round cap → oscillation detection → escalation
+  - `checkPendingFeedback()` — scans for pending feedback files
+  - `detectOscillation()` — identical failed_claims across 2 rounds
+  - Writes feedback files to `.choreographer/verifier/{id}/feedback-round-{n}.json`
+- Created `core/goal-assistant.mjs` — 3-phase interview:
+  - Phase 1: Scope (produces, done, failure)
+  - Phase 2: Claim extraction from answers
+  - Phase 3: Output `goals.json` + per-verifier system prompts
+  - `initGoalsFromPlan()` — extract acceptance criteria from plan files
+- Created `core/schemas/verifier-report.schema.json` — verifier report format
+- Created `core/schemas/goals.schema.json` — goals.json format
+- Created `plugin-claude/scripts/verifier-stop-hook.mjs` — BLOCK envelope on pending feedback
+- Updated `core/companion.mjs`:
+  - `goals` subcommand: `--init --plan=<path>` or interactive mode
+  - `verify` subcommand: loads config, checks pending feedback, reports status
+- Created 15 tests:
+  - `verifier-sanitizer.test.mjs` — 7 tests (strip instructions, cap, null handling)
+  - `verifier-composer.test.mjs` — 5 tests (parallel, conflicts, sequential, status, confidence)
+  - `verifier-loop.test.mjs` — 4 tests (oscillation detection)
+- Bundle + check-bundles: green
+- gitnexus analyze: 1,667 nodes | 2,120 edges | 35 clusters | 37 flows
+
+### Known issues (carried forward)
+- **Test runner subprocess accumulation**: Same as Ship 3 — full test suite times out due to council subprocess drain. Individual test files pass.
+- **Verifier loop execution**: `verify` command reports status but actual broker integration for verifier execution is stub (requires Ship 2 broker event wiring).
+
+### Decisions taken
+- Composer marks verifiers as "running" before awaiting dependencies — prevents double-execution
+- Verifier config uses simple YAML parser (no external dependency) — sufficient for current shape
+- Stop hook emits JSON BLOCK envelope with compact reason summary
+
+### Verification
+- Verifier tests: 15/15 pass
+- Simple tests (strip-flags, parse-opencode): 14/14 pass
+- Bundle + check-bundles: green
+- gitnexus analyze: updated
+
+---
+
 ## Ship 5 — Adversarial review + cleanup (NOT STARTED)
 ## Final — ce-code-review (NOT STARTED)
