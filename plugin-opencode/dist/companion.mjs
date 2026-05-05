@@ -32,6 +32,55 @@ var REGISTRY = {
 };
 var CLI_CHECK_TIMEOUT_MS = 5e3;
 var AGENT_TIMEOUT_MS = 5 * 6e4;
+var ENV_ALLOW_EXACT = /* @__PURE__ */ new Set([
+  // Locale + shell basics.
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TERM",
+  "TZ",
+  "TMPDIR",
+  "LANG",
+  "PWD",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  // Node runtime knobs that affect tool behavior predictably.
+  "NODE_OPTIONS",
+  "NODE_ENV",
+  // Anthropic / Claude CLI direct-API keys (read by `claude`).
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_VERTEX_PROJECT_ID",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  // OpenAI / Codex CLI direct-API keys.
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  // Choreo configuration so tests + ops signals flow to the child.
+  "CHOREO_LOG_DIR",
+  "CHOREO_LOG_MAX_BYTES",
+  "CHOREO_AGENT_ENV_PASSTHROUGH"
+]);
+var ENV_ALLOW_PREFIXES = [
+  "LC_",
+  "XDG_",
+  "ANTHROPIC_",
+  "CLAUDE_",
+  "OPENCODE_",
+  "CODEX_"
+];
+function buildAgentEnv(src = process.env) {
+  if (src.CHOREO_AGENT_ENV_PASSTHROUGH === "1") return { ...src };
+  const out = /* @__PURE__ */ Object.create(null);
+  for (const [key, value] of Object.entries(src)) {
+    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
 function checkCli(binary) {
   const r = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: CLI_CHECK_TIMEOUT_MS });
   if (r.error?.code === "ENOENT") return { status: "not-installed", version: "" };
@@ -81,7 +130,7 @@ function runAgent(name, binary, args, parse = (s) => s) {
   return new Promise((resolve) => {
     const out = [];
     const err = [];
-    const proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
     const timer = setTimeout(() => {
       proc.kill("SIGTERM");
       resolve({ name, output: "", error: `agent timed out after ${AGENT_TIMEOUT_MS / 1e3}s`, code: 1 });
@@ -225,7 +274,15 @@ function emit(event) {
     if (!reserved) {
       throw new Error(`choreo observability: could not reserve backup name after 20 attempts in ${dir}`);
     }
-    renameSync(file, rotatedName);
+    try {
+      renameSync(file, rotatedName);
+    } catch (e) {
+      try {
+        unlinkSync(rotatedName);
+      } catch {
+      }
+      if (!(e && e.code === "ENOENT")) throw e;
+    }
   }
   appendFileSync(file, line, "utf8");
 }
@@ -280,11 +337,38 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(ok ? 0 : 1);
   }
   if (cmd === "agent") {
-    const jsonMode = rest.includes("--json");
-    const nameEquals = rest.find((a) => a.startsWith("--name="))?.split("=")[1];
-    const modelEquals = rest.find((a) => a.startsWith("--model="))?.split("=")[1];
-    const effortEquals = rest.find((a) => a.startsWith("--effort="))?.split("=")[1];
-    const task = rest.filter((a) => !a.startsWith("--")).join(" ").trim();
+    let jsonMode = false;
+    let nameEquals, modelEquals, effortEquals;
+    const taskTokens = [];
+    let afterDashDash = false;
+    for (const a of rest) {
+      if (afterDashDash) {
+        taskTokens.push(a);
+        continue;
+      }
+      if (a === "--") {
+        afterDashDash = true;
+        continue;
+      }
+      if (a === "--json") {
+        jsonMode = true;
+        continue;
+      }
+      if (a.startsWith("--name=")) {
+        nameEquals = a.slice("--name=".length);
+        continue;
+      }
+      if (a.startsWith("--model=")) {
+        modelEquals = a.slice("--model=".length);
+        continue;
+      }
+      if (a.startsWith("--effort=")) {
+        effortEquals = a.slice("--effort=".length);
+        continue;
+      }
+      taskTokens.push(a);
+    }
+    const task = taskTokens.join(" ").trim();
     if (!nameEquals) {
       console.error("Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>");
       process.exit(1);

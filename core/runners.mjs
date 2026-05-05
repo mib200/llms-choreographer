@@ -9,6 +9,44 @@ export const REGISTRY = {
 const CLI_CHECK_TIMEOUT_MS = 5_000;
 const AGENT_TIMEOUT_MS = 5 * 60_000;
 
+// Env allowlist for spawned agent processes. Default policy: forward only what
+// child tools need (system basics + known agent-auth vars). Blocks secrets from
+// the parent shell (AWS_*, GITHUB_TOKEN, NPM_TOKEN, DB creds, etc.) that have no
+// reason to reach a child agent binary.
+// Opt-out: set CHOREO_AGENT_ENV_PASSTHROUGH=1 to forward the full parent env
+// (needed e.g. for AWS Bedrock-backed Claude where AWS_* must reach the child).
+const ENV_ALLOW_EXACT = new Set([
+  // Locale + shell basics.
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TZ', 'TMPDIR',
+  'LANG', 'PWD', 'NO_COLOR', 'FORCE_COLOR',
+  // Node runtime knobs that affect tool behavior predictably.
+  'NODE_OPTIONS', 'NODE_ENV',
+  // Anthropic / Claude CLI direct-API keys (read by `claude`).
+  'ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_VERTEX_PROJECT_ID',
+  'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX',
+  // OpenAI / Codex CLI direct-API keys.
+  'OPENAI_API_KEY', 'OPENAI_BASE_URL',
+  // Choreo configuration so tests + ops signals flow to the child.
+  'CHOREO_LOG_DIR', 'CHOREO_LOG_MAX_BYTES', 'CHOREO_AGENT_ENV_PASSTHROUGH',
+]);
+// Prefix allowlist covers vendor-namespaced vars without enumerating every one.
+const ENV_ALLOW_PREFIXES = [
+  'LC_', 'XDG_',
+  'ANTHROPIC_', 'CLAUDE_', 'OPENCODE_', 'CODEX_',
+];
+
+export function buildAgentEnv(src = process.env) {
+  if (src.CHOREO_AGENT_ENV_PASSTHROUGH === '1') return { ...src };
+  const out = Object.create(null);
+  for (const [key, value] of Object.entries(src)) {
+    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some(p => key.startsWith(p))) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 /** Returns { status: 'ok' | 'not-installed' | 'unavailable', version: string }. */
 export function checkCli(binary) {
   const r = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: CLI_CHECK_TIMEOUT_MS });
@@ -58,7 +96,7 @@ export function runAgent(name, binary, args, parse = s => s) {
   return new Promise(resolve => {
     const out = [];
     const err = [];
-    const proc = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
 
     const timer = setTimeout(() => {
       proc.kill('SIGTERM');

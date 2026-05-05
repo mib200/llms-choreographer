@@ -58,11 +58,25 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   // ── agent ───────────────────────────────────────────────────────────────────
 
   if (cmd === 'agent') {
-    const jsonMode = rest.includes('--json');
-    const nameEquals = rest.find(a => a.startsWith('--name='))?.split('=')[1];
-    const modelEquals = rest.find(a => a.startsWith('--model='))?.split('=')[1];
-    const effortEquals = rest.find(a => a.startsWith('--effort='))?.split('=')[1];
-    const task = rest.filter(a => !a.startsWith('--')).join(' ').trim();
+    // Known-flag allowlist parser. Only strip tokens the subcommand actually owns
+    // (--json, --name=, --model=, --effort=). Any other `--*` token is preserved
+    // as part of the task text, so user prompts like "explain --force and --no-verify"
+    // survive verbatim. `--` is an explicit delimiter: every token after it is task,
+    // regardless of leading dashes.
+    let jsonMode = false;
+    let nameEquals, modelEquals, effortEquals;
+    const taskTokens = [];
+    let afterDashDash = false;
+    for (const a of rest) {
+      if (afterDashDash) { taskTokens.push(a); continue; }
+      if (a === '--') { afterDashDash = true; continue; }
+      if (a === '--json') { jsonMode = true; continue; }
+      if (a.startsWith('--name='))   { nameEquals   = a.slice('--name='.length);   continue; }
+      if (a.startsWith('--model='))  { modelEquals  = a.slice('--model='.length);  continue; }
+      if (a.startsWith('--effort=')) { effortEquals = a.slice('--effort='.length); continue; }
+      taskTokens.push(a);
+    }
+    const task = taskTokens.join(' ').trim();
 
     if (!nameEquals) {
       console.error('Usage: companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>');

@@ -239,6 +239,154 @@ test('claude --name dispatches parses stream-json output before printing', () =>
   }
 });
 
+test('runAgent scrubs sensitive env vars from spawned child by default (F6)', () => {
+  // Regression guard: parent shell leaks (AWS_*, GITHUB_TOKEN, DATABASE_URL)
+  // must NOT reach the child agent binary. runAgent() now applies an env allowlist.
+  const fake = createFakeAgents(['codex'], {
+    script: () => [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
+      'done',
+      'echo "AWS_SECRET=${AWS_SECRET_ACCESS_KEY:-MISSING}"',
+      'echo "GH_TOK=${GITHUB_TOKEN:-MISSING}"',
+      'echo "DB=${DATABASE_URL:-MISSING}"',
+      'echo "NPM_TOK=${NPM_TOKEN:-MISSING}"',
+      'echo "HOME_OK=${HOME:+present}"',
+    ].join('\n'),
+  });
+  try {
+    const { stdout, code } = runCompanion(
+      ['agent', '--name=codex', 'probe'],
+      {
+        path: fake.path, logDir,
+        extraEnv: {
+          AWS_SECRET_ACCESS_KEY: 'should-not-leak',
+          GITHUB_TOKEN: 'ghp_should-not-leak',
+          DATABASE_URL: 'postgres://should-not-leak',
+          NPM_TOKEN: 'npm_should-not-leak',
+        },
+      }
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /AWS_SECRET=MISSING/, 'AWS_SECRET_ACCESS_KEY scrubbed from child env');
+    assert.match(stdout, /GH_TOK=MISSING/,     'GITHUB_TOKEN scrubbed');
+    assert.match(stdout, /DB=MISSING/,          'DATABASE_URL scrubbed');
+    assert.match(stdout, /NPM_TOK=MISSING/,     'NPM_TOKEN scrubbed');
+    // System basics still flow so child can run.
+    assert.match(stdout, /HOME_OK=present/,     'HOME preserved');
+  } finally { fake.cleanup(); }
+});
+
+test('runAgent allows known agent-auth env vars through by default (ANTHROPIC_API_KEY)', () => {
+  // Counterpoint to the scrub test: legitimate agent-auth env MUST still flow.
+  const fake = createFakeAgents(['codex'], {
+    script: () => [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
+      'done',
+      'echo "ANT=${ANTHROPIC_API_KEY:-MISSING}"',
+      'echo "OAI=${OPENAI_API_KEY:-MISSING}"',
+      'echo "CODEX=${CODEX_EXAMPLE:-MISSING}"',
+    ].join('\n'),
+  });
+  try {
+    const { stdout, code } = runCompanion(
+      ['agent', '--name=codex', 'probe'],
+      {
+        path: fake.path, logDir,
+        extraEnv: {
+          ANTHROPIC_API_KEY: 'sk-ant-keep',
+          OPENAI_API_KEY: 'sk-openai-keep',
+          CODEX_EXAMPLE: 'codex-prefix-keep',
+        },
+      }
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /ANT=sk-ant-keep/,       'ANTHROPIC_API_KEY forwarded');
+    assert.match(stdout, /OAI=sk-openai-keep/,    'OPENAI_API_KEY forwarded');
+    assert.match(stdout, /CODEX=codex-prefix-keep/, 'CODEX_* prefix allowed');
+  } finally { fake.cleanup(); }
+});
+
+test('runAgent opt-in forwards full env when CHOREO_AGENT_ENV_PASSTHROUGH=1 (F6 escape hatch)', () => {
+  // Users running Claude via Bedrock need AWS_* to reach the child. The opt-in
+  // env var bypasses the allowlist so those workflows still function.
+  const fake = createFakeAgents(['codex'], {
+    script: () => [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
+      'done',
+      'echo "AWS=${AWS_SECRET_ACCESS_KEY:-MISSING}"',
+    ].join('\n'),
+  });
+  try {
+    const { stdout, code } = runCompanion(
+      ['agent', '--name=codex', 'probe'],
+      {
+        path: fake.path, logDir,
+        extraEnv: {
+          CHOREO_AGENT_ENV_PASSTHROUGH: '1',
+          AWS_SECRET_ACCESS_KEY: 'explicit-opt-in',
+        },
+      }
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /AWS=explicit-opt-in/, 'opt-in forwards full env including AWS_*');
+  } finally { fake.cleanup(); }
+});
+
+test('agent parser preserves unknown --flag tokens in task text (F8)', () => {
+  // Pre-Phase-D the parser stripped ANY token starting with `--`, corrupting
+  // user tasks like "explain --force and --no-verify". Now only known flags
+  // (--json, --name=, --model=, --effort=) are consumed.
+  const fake = createFakeAgents(['codex'], {
+    script: () => [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
+      'done',
+      'echo "ARGS:$*"',
+    ].join('\n'),
+  });
+  try {
+    const { stdout, code } = runCompanion(
+      ['agent', '--name=codex', 'explain', '--force', 'and', '--no-verify'],
+      { path: fake.path, logDir }
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /--force/,     '--force preserved in task');
+    assert.match(stdout, /--no-verify/, '--no-verify preserved in task');
+    assert.match(stdout, /explain/,     'non-flag token preserved');
+  } finally { fake.cleanup(); }
+});
+
+test('agent parser respects `--` delimiter — everything after is task text (F8)', () => {
+  // `--` is the standard POSIX end-of-options marker. After it, even tokens
+  // that would normally be consumed (e.g. --json) are treated as task text.
+  const fake = createFakeAgents(['codex'], {
+    script: () => [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
+      'done',
+      'echo "ARGS:$*"',
+    ].join('\n'),
+  });
+  try {
+    const { stdout, code } = runCompanion(
+      ['agent', '--name=codex', '--', 'print', '--json', 'format'],
+      { path: fake.path, logDir }
+    );
+    assert.equal(code, 0);
+    assert.match(stdout, /--json/, '--json after `--` preserved as task text');
+    // jsonMode NOT enabled: output is the human delimiter format, not JSON.
+    assert.match(stdout, /AGENT: CODEX/, 'stdout is human-format — --json after `--` did not flip jsonMode');
+  } finally { fake.cleanup(); }
+});
+
 test('opencode --name dispatches parses output (ANSI stripped)', () => {
   // Fake opencode emits text with an ANSI color code. parseOpenCodeOutput
   // strips ANSI — the sentinel "CLEAN_TEXT" must remain.

@@ -229,6 +229,34 @@ test('rotation chooses a fresh backup name when lower sequence already taken (O_
   assert.ok(ours.length >= 1, 'rotation produced a fresh backup distinct from the pre-existing one');
 });
 
+test('concurrent emits across workers do not lose events to rotation race (FF1)', async () => {
+  // Regression guard for the ENOENT-tolerance branch: N workers all see the
+  // active file above cap, reserve N distinct backup names via O_EXCL, and race
+  // renameSync. Exactly one winner renames; the rest get ENOENT. The tolerance
+  // branch must clean up each loser's zero-byte sentinel and fall through to
+  // append the event to the freshly-empty active file. Total: every event
+  // persists — zero loss. Pre-Phase-D, loser renames threw and the outer emit()
+  // caller swallowed the exception, silently dropping events.
+  process.env.CHOREO_LOG_MAX_BYTES = String(1024);
+  const { writeFileSync } = await import('node:fs');
+  const { Worker } = await import('node:worker_threads');
+  const today = new Date().toISOString().slice(0, 10);
+  const file = join(tmpLogDir, `${today}.ndjson`);
+  writeFileSync(file, 'x'.repeat(2 * 1024));
+
+  const workerUrl = new URL('./helpers/concurrent-emit-worker.mjs', import.meta.url);
+  const N = 4;
+  await Promise.all(Array.from({ length: N }, (_, id) => new Promise((resolve, reject) => {
+    const w = new Worker(workerUrl, { workerData: { logDir: tmpLogDir, cap: 1024, id } });
+    w.on('exit', code => code === 0 ? resolve() : reject(new Error(`worker ${id} exited ${code}`)));
+    w.on('error', reject);
+  })));
+
+  const { readEvents } = await loadObs();
+  const ids = readEvents(today).filter(e => e.type === 'concurrent').map(e => e.id).sort((a, b) => a - b);
+  assert.deepEqual(ids, [0, 1, 2, 3], `all ${N} concurrent events persisted across the rotation race`);
+});
+
 test('emit fails closed when renameSync fails (does not corrupt oversized file)', async () => {
   // Simulate by making the dir read-only AFTER the active file exceeds cap.
   // renameSync will reject; emit must surface the error via its outer try/catch

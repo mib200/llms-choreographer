@@ -129,9 +129,18 @@ export function emit(event) {
     if (!reserved) {
       throw new Error(`choreo observability: could not reserve backup name after 20 attempts in ${dir}`);
     }
-    // Fail closed: if rename fails, let the outer emit() caller's try/catch swallow the event
-    // rather than silently writing past the cap into an oversized file.
-    renameSync(file, rotatedName);
+    // Rename active source into our reserved slot. Tolerate ENOENT: another process
+    // already rotated the source between our statSync and renameSync. Our reserved
+    // zero-byte sentinel is then stale; clean it up and continue to the append path,
+    // which will land on the freshly-empty active file.
+    // Other rename failures (permissions, cross-device) fail closed: clean sentinel
+    // and propagate so the outer caller sees the error rather than silent data loss.
+    try {
+      renameSync(file, rotatedName);
+    } catch (e) {
+      try { unlinkSync(rotatedName); } catch { /* best-effort sentinel cleanup */ }
+      if (!(e && e.code === 'ENOENT')) throw e;
+    }
   }
 
   appendFileSync(file, line, 'utf8');
