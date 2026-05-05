@@ -44,7 +44,7 @@ Before any adapter code. Deliver `docs/research/acp-feasibility.md`.
 
 **Status: COMPLETE** (2026-05-05). All four transports researched. ACP protocol validated at https://agentclientprotocol.com with full documentation and TypeScript SDK (`@agentclientprotocol/sdk` v0.21.0).
 
-1. **Claude ACP**: Confirmed. Claude supports ACP via Zed's SDK adapter (`@anthropic-ai/claude-agent-sdk`). ACP stdio transport is the primary path. CLI subprocess fallback: `claude --output-format stream-json --print`.
+1. **Claude ACP**: Confirmed. Primary ACP stdio path is `@agentclientprotocol/claude-agent-acp@0.32.0` (published by the ACP org; wraps Claude CLI in an ACP stdio server). Alternate native fallbacks: `@anthropic-ai/claude-agent-sdk@0.2.128` programmatic SDK (does NOT speak ACP — it is Anthropic's programmatic agent API), or CLI subprocess `claude --output-format stream-json --print`.
 2. **Codex ACP**: Confirmed. Codex supports ACP via Zed's adapter (`github.com/zed-industries/codex-acp`). ACP stdio transport is the primary path. Native `codex app-server` JSON-RPC is the fallback.
 3. **OpenCode ACP**: Confirmed. OpenCode natively supports ACP stdio transport. `opencode serve` HTTP API is the fallback.
 4. **Gemini ACP**: Confirmed. Gemini CLI natively supports ACP stdio. Subprocess `gemini -y -m <model> -p "<prompt>"` is the fallback.
@@ -98,18 +98,17 @@ Instrumentation lives in `core/observability.mjs` (see Ship 1). Success-metric g
 
 ### Files to modify
 
-- `core/companion.mjs` — add a new `agent` subcommand: `companion.mjs agent --name=<claude|codex|opencode|gemini> [--model=...] [--effort=...] <task>`. Passes the task through unchanged; no role prompt; single agent dispatched via existing `runAgent()` in `core/runners.mjs`. No adapter layer yet — deliberately uses the subprocess path already proven by tests.
+- `core/companion.mjs` — add a new `agent` subcommand: `companion.mjs agent --name=<claude|codex|opencode> [--model=...] [--effort=...] <task>`. Passes the task through unchanged; no role prompt; single agent dispatched via existing `runAgent()` in `core/runners.mjs`. No adapter layer yet — deliberately uses the subprocess path already proven by tests. **Gemini is excluded from Ship 1 per user lock — it lands in Ship 5+.**
 - `plugin-claude/commands/codex.md` — change body from `companion.mjs council "$ARGUMENTS"` to `companion.mjs agent --name=codex "$ARGUMENTS"`.
 - `plugin-claude/commands/claude.md` — same fix with `--name=claude`.
 - `plugin-claude/commands/opencode.md` — same fix with `--name=opencode`.
-- `plugin-claude/commands/gemini.md` — NEW command, mirrors the three above.
-- Mirror all four into `plugin-codex/skills/{codex,claude,opencode,gemini}/SKILL.md` and `plugin-opencode/.opencode/commands/choreo-{codex,claude,opencode,gemini}.md`.
+- Mirror the three into `plugin-codex/skills/{codex,claude,opencode}/SKILL.md` and `plugin-opencode/.opencode/commands/choreo-{codex,claude,opencode}.md`. **No `/choreo:gemini` command in Ship 1** — Gemini locked to Ship 5+ per user directive.
 - Update frontmatter descriptions so command name matches behavior ("Delegate a task to Codex" means delegate, not council).
 
 ### Verification (Ship 1 exit criteria)
 
 1. `/choreo:codex "hello"` invokes Codex alone, not a council. Verified via `~/.choreo/logs/<date>.ndjson` showing exactly one `agent_invocation` event with `name=codex`.
-2. Same for `/choreo:claude`, `/choreo:opencode`, `/choreo:gemini`.
+2. Same for `/choreo:claude` and `/choreo:opencode`. `/choreo:gemini` does NOT exist in Ship 1 — introduced in Ship 5+.
 3. `docs/research/acp-feasibility.md` contains per-agent verdicts and setup instructions.
 4. `core/observability.mjs` emits events for at least one call on each agent; rotation tested; on-disk NDJSON validates against a shared event schema.
 5. Hard success metrics are instrumented; baseline measurements recorded.
@@ -155,12 +154,13 @@ Each adapter follows the same pattern:
 2. If ACP spawn fails or `initialize` fails → fall back to native transport
 3. Report active transport via `checkAvailability()` → `{ available, transport: "acp" | "native", reason?, setupCommand? }`
 
-| Agent | ACP stdio spawn | Native fallback | Notes |
+| Agent | ACP stdio spawn (PRIMARY) | Native fallback | Notes |
 |-------|----------------|-----------------|-------|
-| **Claude** | `claude` binary with ACP stdio (via `@anthropic-ai/claude-agent-sdk` or Zed adapter) | `@anthropic-ai/claude-agent-sdk` API or CLI subprocess (`claude -p --output-format stream-json`) | SDK provides typed streaming, session resume, structured output |
-| **Codex** | `codex` binary with ACP stdio (via Zed's `codex-acp` adapter) | `codex app-server` JSON-RPC over Unix socket | Native transport has `outputSchema` support — ACP does not |
-| **OpenCode** | `opencode` binary with ACP stdio | `opencode serve` HTTP API + SSE | HTTP has session persistence, clean abort via `POST /session/:id/abort` |
-| **Gemini** | `gemini` binary with ACP stdio | `gemini -y -m <model> -o json -p "<prompt>"` subprocess | Both paths are subprocess — ACP adds session lifecycle |
+| **Claude** | `@agentclientprotocol/claude-agent-acp@0.32.0` (wraps Claude CLI in ACP stdio server; pinned in `package.json`) | `@anthropic-ai/claude-agent-sdk@0.2.128` programmatic API, OR CLI subprocess `claude -p --output-format stream-json` | ACP adapter is primary. SDK is alternate native fallback — it does NOT speak ACP. |
+| **Codex** | `codex` binary with ACP stdio (via `codex-acp` Zed-maintained adapter) | `codex app-server` JSON-RPC over Unix socket | Native transport has `outputSchema`. **Council mandate: no auto-fallback to app-server for schema enforcement — uniform client-side validation for all agents.** |
+| **OpenCode** | `opencode` binary with ACP stdio (native; primary path) | `opencode serve` HTTP API + SSE (invoked only when ACP stdio unavailable) | Reframed: `opencode serve` is fallback-only, not first-class onboarding. |
+
+**Gemini: deliberately excluded from Ship 2 adapter scope.** Gemini ACP adapter lands in Ship 5+ per user lock. Rationale: prevent scope expansion before claude/codex/opencode ACP paths are proven + metrics-gated. Ship 5+ inclusion criteria documented in `docs/research/acp-feasibility.md` §Gemini.
 
 ### Files to create
 
@@ -171,23 +171,62 @@ Each adapter follows the same pattern:
   checkAvailability() → {available, transport?, reason?, setupCommand?}
   supports: {streaming, structuredOutput, sessionResume, cancellation, background, modeSwitching, mcpInjection}
   ```
-- `core/agents/acp-client.mjs` — **NEW** (replaces the old "deliberately NOT created" decision). Shared ACP client using `@agentclientprotocol/sdk`. Handles:
+- `core/agents/acp-client.mjs` — **NEW** (Supersedes prior council kill-decision — under ACP-first, the shared client abstraction has 3 real consumers, not 1; the original kill-reason no longer holds). Shared ACP client using `@agentclientprotocol/sdk@^0.21.0`. Top-of-file comment pins resolved ACP SDK package name + version (`@agentclientprotocol/sdk@0.21.0`, `@agentclientprotocol/claude-agent-acp@0.32.0`). Handles:
   - Agent subprocess spawn with stdio transport
   - `initialize` / `authenticate` handshake
   - `session/new` / `session/load` / `session/resume` / `session/close`
   - `session/prompt` with `session/update` streaming
   - `session/cancel`
-  - Structured output parsing (client-side JSON validation against schema)
-  - Permission request handling (auto-allow for non-interactive mode)
-- `core/agents/claude.mjs` — ACP stdio via `@anthropic-ai/claude-agent-sdk`. Fallback: SDK API or CLI subprocess.
-- `core/agents/codex.mjs` — ACP stdio via Zed's `codex-acp` adapter. Fallback: `codex app-server` JSON-RPC (port from external plugin's `scripts/lib/app-server.mjs`).
-- `core/agents/opencode.mjs` — ACP stdio. Fallback: `opencode serve` HTTP API. Availability probe fails loud: `"opencode serve is not running. Start it with: opencode serve &"`.
-- `core/agents/gemini.mjs` — ACP stdio. Fallback: subprocess `gemini -y -m <model> -p <prompt>`. Retry + fallback + skip per council skill.
+  - Structured output parsing (client-side JSON validation against schema) — uniform across all agents
+  - Permission request handling: **auto-deny default in non-interactive contexts** (council mandate — security posture, not impl detail). Explicit allowlist overrides declared per-verifier / per-council-member.
+- `core/agents/claude.mjs` — ACP stdio via `@agentclientprotocol/claude-agent-acp`. Fallback A: `@anthropic-ai/claude-agent-sdk` programmatic API. Fallback B: CLI subprocess `claude -p --output-format stream-json`.
+- `core/agents/codex.mjs` — ACP stdio via Zed's `codex-acp` adapter. Fallback: `codex app-server` JSON-RPC (port from external plugin's `scripts/lib/app-server.mjs`). **No auto-fallback to app-server for schema enforcement**.
+- `core/agents/opencode.mjs` — ACP stdio primary. Fallback: `opencode serve` HTTP API (invoked only when ACP stdio unavailable). Availability probe fails loud: `"opencode ACP stdio unavailable. Start HTTP fallback with: opencode serve &"`.
 - `core/runtime/broker.mjs` — the daemon. Manages N ACP connections keyed by agent name. Includes:
   - ACP client lifecycle (spawn, init, session management, teardown)
   - Load queue (sequential processing per agent, no BUSY concept)
   - DLQ + idempotency + circuit-breaker
   - Unix socket endpoint for internal choreographer communication
+  - **Two pub/sub surfaces (council mandate)**:
+
+    **Convention**: `snake_case` for all event names (3-of-4 council consensus; 1-of-4 dissent on slash/colon recorded as non-load-bearing editorial).
+
+    **Boundary rule**: ACP protocol frames → `broker.agents[name]`; orchestration decisions + lifecycle facts → `broker.events`. No wildcard bridging.
+
+    **`broker.agents[name]`** — per-agent ACP client EventEmitter, one instance per agent name; disposed + recreated on each `lifecycle_session_start` (consumers must re-register listeners):
+
+    | Event | Producers | Consumers |
+    |---|---|---|
+    | `session_update` | ACP stdio adapter (`core/agents/*.mjs`) | council phase machine (Ship 3), verifier loop dispatcher (Ship 4), observability NDJSON logger, transcript recorder |
+    | `permission_request` | ACP stdio adapter | council phase machine, permission handler in `core/agents/acp-client.mjs` |
+    | `agent_error` | ACP stdio adapter | observability, circuit-breaker logic |
+    | `agent_exit` | ACP stdio adapter | lifecycle manager, broker session manager |
+    | `adapter_available` | broker session manager | council phase machine (Ship 3) |
+    | `adapter_degraded` | broker internal | observability, DLQ handler |
+    | `adapter_failed` | broker internal | circuit-breaker, observability |
+
+    - `session_update` NOT decomposed — payload discriminant `type` tells consumers what's inside (keeps broker ACP-schema-agnostic).
+    - `session_close` + `session_cancel` consolidated into `agent_exit` with `reason: completed | cancelled | error`.
+
+    **`broker.events`** — single internal EventEmitter:
+
+    | Event | Producers | Consumers |
+    |---|---|---|
+    | `lifecycle_session_start` | `core/runtime/lifecycle.mjs` | observability, council phase machine |
+    | `lifecycle_session_end` | `core/runtime/lifecycle.mjs` | observability, run summary |
+    | `builder_stop` | `plugin-claude/scripts/verifier-stop-hook.mjs` | verifier loop dispatcher (Ship 4) |
+    | `verifier_dispatch` | `core/verifier/loop.mjs` (Ship 4) | verifier composer (Ship 4), observability |
+    | `verifier_report` | `core/verifier/loop.mjs` (Ship 4) | lifecycle manager, observability |
+    | `dlq_message` *(internal)* | broker internal DLQ | observability, dead-letter handler |
+    | `circuit_breaker_trip` *(internal)* | broker internal | observability, adapter health tracker |
+
+    - Events annotated `(internal)` MUST NOT be subscribed by non-broker consumers (wrong abstraction layer).
+    - Dropped from consideration: `lifecycle_transition` (redundant with explicit start/end); `run_error` (too vague; typed errors go on agent channel or in structured `verifier_report`).
+
+    **Absent-consumer-at-emit-time contract**: `broker.events` uses **buffered emit with drain-on-first-listener** for `builder_stop`, `verifier_dispatch`, `verifier_report`, `lifecycle_session_start`, `lifecycle_session_end`. Node.js EventEmitter silently drops events with no listeners; buffering prevents startup races where the verifier loop dispatcher hasn't yet registered when `builder_stop` fires. Other events are fire-and-forget.
+
+    **Minimal payload schemas**: each event carries a typed payload with a minimal field contract (not just a name). Examples: `builder_stop` → `{ session_id, agent_name, reason }`; `verifier_report` → `{ verifier_id, builder_run_id, round, status, ... }` matching Ship 4 report schema. Ship 2 defines exact JSON schemas; producer/consumer agreement is contract-tested.
+  - Dependencies (pinned in root `package.json`): `@agentclientprotocol/sdk@^0.21.0`, `@agentclientprotocol/claude-agent-acp@^0.32.0`. Ship 2 pre-work includes `npm view` probe to verify resolved versions before install.
 - `core/runtime/endpoint.mjs` — Unix socket on macOS/Linux; named-pipe-style on Windows. Reuse patterns from `plugins/codex/scripts/lib/broker-endpoint.mjs`.
 - `core/runtime/lifecycle.mjs` — SessionStart / SessionEnd hook handlers. On SessionStart: spawn broker detached, inject `CHOREO_BROKER_ENDPOINT` + `CHOREO_SESSION_ID` + `CLAUDE_PLUGIN_DATA` into `$CLAUDE_ENV_FILE`. On SessionEnd: `broker/shutdown`, teardown.
 - `core/parsers.mjs` extensions — `parseStructuredOutput(raw, schema)` — client-side JSON validation for ACP (since ACP doesn't enforce schemas).
@@ -216,7 +255,7 @@ Cap jobs at 50, prune oldest.
 ### Verification
 
 - Unit: `core/tests/runtime/*.test.mjs` round-trip a session/prompt against a fake ACP agent; DLQ test; idempotency test (same-key retry returns cached result); circuit-breaker test (N failures trip, probe re-enables); load queue test (concurrent requests processed sequentially).
-- Per-adapter: `core/tests/agents/{claude,codex,opencode,gemini}.test.mjs`. Use fake fixtures (port `tests/fake-codex-fixture.mjs` from external plugin; build equivalents for others).
+- Per-adapter: `core/tests/agents/{claude,codex,opencode}.test.mjs`. Use fake fixtures (port `tests/fake-codex-fixture.mjs` from external plugin; build equivalents for others). Gemini adapter test lands in Ship 5+.
 - Integration: open a Claude Code session, confirm `CHOREO_BROKER_ENDPOINT` exported, `ps | grep broker` shows daemon, SessionEnd cleanly tears down (no orphan process).
 - ACP fallback: kill ACP stdio spawn for one agent, confirm it falls back to native transport and still produces output. Observability NDJSON shows `transport: "native"`.
 - Hard success metrics from Phase 0 re-measured: task success rate, cancel reliability, etc. Must not regress vs Ship 1 baseline.
@@ -539,7 +578,7 @@ Adversarial review lands last because Ship 4's Verifier Loop already exercises s
 - Remove `codex exec` code paths from `core/companion.mjs` and `core/runners.mjs`. All Codex calls go through the ACP adapter (with app-server fallback).
 - Similarly retire direct `claude --print`, `opencode run` subprocess spawns in the council / adversarial / verifier paths. Adapter boundary is mandatory for multi-agent code.
 - Move `docs/codex-appserver-migration-plan.md` → `docs/archive/codex-appserver-migration-plan.md` with a top-of-file note redirecting to this plan.
-- Remove `acp-docs/` directory — ACP protocol reference is available online at https://agentclientprotocol.com. Local copy was for Phase 0 research only.
+- Delete `parseClaudeStreamJson` + `parseOpenCodeOutput` exports from `core/parsers.mjs`; retain `parseStructuredOutput` only. Legacy stdout parsers are dead code once subprocess fallbacks retire.
 - Update `docs/system-architecture.md`, `docs/codebase-summary.md`, `docs/project-overview-pdr.md`, `docs/delegation.md` to describe the ACP-first broker + council + Verifier Loop architecture.
 - Update `CLAUDE.md` / `AGENTS.md` to include a note on the ACP broker + Verifier Loop entry points.
 - Extend `core/tests/helpers/fake-agents.mjs` with a fake ACP agent fixture (mirror SDK's `examples-agent.ts`) so existing tests run unchanged against the new transport.
@@ -588,7 +627,7 @@ All 5 unanimous-across-debaters gaps are baked into the ship where they belong:
 ## Critical files summary
 
 **Will be created**:
-- `core/agents/{base,acp-client,claude,codex,opencode,gemini}.mjs`
+- `core/agents/{base,acp-client,claude,codex,opencode}.mjs` (Ship 5+ adds `gemini.mjs`)
 - `core/runtime/{broker,endpoint,lifecycle}.mjs`
 - `core/verifier/{loop,sanitizer,composer}.mjs`
 - `core/goal-assistant.mjs`
@@ -597,11 +636,11 @@ All 5 unanimous-across-debaters gaps are baked into the ship where they belong:
 - `core/review-render.mjs`
 - `core/prompts/adversarial-review.md`
 - `core/schemas/{council-position,council-synthesis,verifier-report,goals,review-output}.schema.json`
-- `plugin-claude/commands/{adversarial-review,gemini,verifier-setup,verify}.md`
+- `plugin-claude/commands/{adversarial-review,verifier-setup,verify}.md` (Ship 5 also adds `gemini.md` as part of Gemini adapter introduction)
 - `plugin-claude/hooks/hooks.json`
 - `plugin-claude/scripts/{lifecycle,verifier-stop-hook}.mjs`
-- `plugin-codex/skills/{adversarial-review,gemini,verifier-setup,verify}/SKILL.md`
-- `plugin-opencode/.opencode/commands/choreo-{adversarial-review,gemini,verifier-setup,verify}.md`
+- `plugin-codex/skills/{adversarial-review,verifier-setup,verify}/SKILL.md` (Ship 5+ adds gemini skill)
+- `plugin-opencode/.opencode/commands/choreo-{adversarial-review,verifier-setup,verify}.md` (Ship 5+ adds choreo-gemini)
 - `.claude/skills/verifier-setup/SKILL.md`
 - `.claude/skills/verifier-compact/SKILL.md`
 - `docs/research/acp-feasibility.md`
@@ -619,7 +658,7 @@ All 5 unanimous-across-debaters gaps are baked into the ship where they belong:
 
 **Will be retired**:
 - `docs/codex-appserver-migration-plan.md` → `docs/archive/`
-- `acp-docs/` → deleted (research reference only; protocol docs available online)
+- `core/parsers.mjs` legacy exports (`parseClaudeStreamJson`, `parseOpenCodeOutput`) → deleted after Ship 5 subprocess fallback retirement; only `parseStructuredOutput` remains.
 - `codex exec` direct-spawn paths in `core/companion.mjs` + `core/runners.mjs`
 
 ---
@@ -683,7 +722,7 @@ From the existing choreographer repo:
 
 1. **ACP stdio spawn stability per agent is uneven.** Each adapter's availability probe must return a clear `{available, transport, reason, setupCommand}` result so the council run degrades gracefully. A `--transport=auto|acp|native` override per agent for debugging is recommended. Ship 1 defines this shape.
 2. **Broker resilience must be present at first use.** DLQ + idempotency + circuit-breaker + load queue are not nice-to-have; Ship 2 is gated on them.
-3. **`opencode serve` mandate adds onboarding friction.** Availability probe must fail loud with the exact setup command. Documented in README + `/choreo:opencode` command's description.
+3. **`opencode serve` reframed as fallback-only** (council mandate). Primary OpenCode path is ACP stdio; `serve` invoked only when ACP spawn fails. Availability probe fails loud with exact setup command when ACP stdio is unavailable. README + `/choreo:opencode` command copy says "`opencode serve` required only when ACP stdio unavailable."
 4. **Stop-hook timeout is 900 seconds (Claude Code's max).** Verifier Loop cannot exceed this or it will silently time out. Per-verifier `max_runtime_sec` × `max_rounds` must budget under 900s.
 5. **Non-interactive council runs** (from CI, from sub-agent Bash tools, from `--autonomous`) must skip Phase 0.25 and Phase 0.5 explicitly. Not a bug — a deliberate design.
 6. **Bundle drift** — every change to `core/` must be rebundled into all three plugin targets. `npm run check-bundles` is wired; CI must enforce it. Already a Ship-3-onward verification gate.
@@ -727,7 +766,7 @@ Before every commit: `gitnexus_detect_changes()` to confirm the change set match
 - Synthesis doc: `debates/council/choreographer-acp-migration-plan-debate-a7f3e2/synthesis.md` (anonymized merge)
 - Session memory: `/Users/mk/.claude/projects/-Users-mk-Repositories-mib200-AI-choreographer/memory/project_session_choreographer_acp_migration_council.md`
 - Phase 0 ACP research: `docs/research/acp-feasibility.md` (transport contracts for all 4 agents + ACP protocol validation)
-- ACP protocol reference: https://agentclientprotocol.com (online; `acp-docs/` was local research copy, deleted after Ship 5)
+- ACP protocol reference: https://agentclientprotocol.com (authoritative; TypeScript SDK: https://github.com/agentclientprotocol/typescript-sdk). No local copy required.
 - Superseded draft: original version of this file, captured in git history before this revision
 
 

@@ -1,542 +1,215 @@
-# Phase 0 — Transport Feasibility Research
+# Phase 0 — ACP Transport Feasibility Research
 
 **Date**: 2026-05-05
-**Status**: Complete
-**Blocks**: Ship 2 (adapter + broker implementation)
+**Status**: Rewritten per council decision `acp-migration-critical-review-plan-debate-b8d4c1`. Supersedes prior "adapter-interface-first" draft.
+**Blocks**: Ship 2 implementation start (Ship 1 code is transport-independent and may proceed in parallel).
 **Plan ref**: `docs/plans/2026-05-05-acp-migration-plan.md`
+**Council decision**: `debates/council/acp-migration-critical-review-plan-debate-b8d4c1/decision.md`
+**Council synthesis**: `debates/council/acp-migration-critical-review-plan-debate-b8d4c1/synthesis.md`
 
 ---
 
 ## Executive Summary
 
-| Agent | Recommended Transport | Fallback | Structured Output | Streaming | Session Resume | Cancellation |
-|-------|----------------------|----------|-------------------|-----------|----------------|--------------|
-| **Claude** | SDK (`@anthropic-ai/claude-agent-sdk`) | CLI subprocess (`claude -p --output-format stream-json`) | Yes (JSON Schema) | Yes (async generator / JSONL) | Yes (`resume` option / `--resume` flag) | Break generator / SIGTERM |
-| **Codex** | Native `app-server` JSON-RPC via broker | Direct stdio spawn (bypass broker) | Yes (`outputSchema` param) | Yes (JSONL notifications) | Yes (`thread/resume`) | `turn/interrupt` method |
-| **OpenCode** | HTTP API via `opencode serve` | CLI subprocess (`opencode run --format json`) | Yes (OpenAPI typed responses) | Yes (SSE via `/event`) | Yes (persistent sessions) | `POST /session/:id/abort` |
-| **Gemini** | Subprocess (`gemini -y -m <model> -o json -p`) | N/A (subprocess is the only path) | Partial (JSON envelope, no schema enforcement) | Partial (`-o stream-json` JSONL) | No (one-shot only) | SIGTERM |
+The **Agent Client Protocol (ACP)** is a standardized JSON-RPC 2.0 protocol over stdio for agent-client communication. All four choreographer agents have first-class ACP integration paths. ACP is the primary transport; native per-agent transports are fallbacks when ACP probe fails or the adapter is unavailable.
 
-**Key decision**: No universal "ACP" protocol. Each agent speaks its own native wire format. The broker multiplexes heterogeneous connections — it does NOT impose a uniform wire format. This validates the plan's "adapter-interface-first" architectural framing.
+Protocol reference: <https://agentclientprotocol.com>. TypeScript SDK: `@agentclientprotocol/sdk@0.21.0`.
 
----
+| Agent | ACP Primary Path | Native Fallback | Structured Output | Streaming | Session Resume | Cancellation |
+|-------|------------------|-----------------|-------------------|-----------|----------------|--------------|
+| **Claude** | `@agentclientprotocol/claude-agent-acp@0.32.0` (wraps Claude CLI in ACP stdio server) | `@anthropic-ai/claude-agent-sdk@0.2.128` programmatic SDK OR CLI subprocess `claude -p --output-format stream-json` | Client-side via `parseStructuredOutput(raw, schema)` | ACP `session/update` notifications | ACP `session/load` + `session/resume` | ACP `session/cancel` |
+| **Codex** | ACP stdio via `codex-acp` adapter (Zed-maintained) | `codex app-server` JSON-RPC over Unix socket (native `outputSchema` available) | Client-side; **no auto-fallback** to app-server `outputSchema` (council-decided uniformity) | JSONL notifications (native) / `session/update` (ACP) | ACP `session/load` (primary) / `thread/resume` (native) | `session/cancel` / `turn/interrupt` |
+| **OpenCode** | ACP stdio (native) | `opencode serve` HTTP API + SSE (invoked only if ACP spawn fails) | Client-side | SSE / `session/update` | ACP `session/load` / persistent HTTP sessions | `session/cancel` / `POST /session/:id/abort` |
+| **Gemini** | ACP stdio (native CLI support — **Ship 5+ only per user lock**) | Subprocess `gemini -y -m <model> -o json -p "<prompt>"` | Client-side (no schema enforcement) | JSONL stdout / `session/update` | None (subprocess) / ACP `session/load` | SIGTERM / `session/cancel` |
 
-## 1. Claude — Agent SDK + CLI Subprocess
+**Hard constraint**: Gemini is **locked to Ship 5+** per user directive. It does NOT appear in Ship 1 REGISTRY, `/choreo:gemini` command, or Ship 2 adapter table. The lock prevents scope expansion before claude/codex/opencode ACP paths are proven + metrics-gated.
 
-### Primary: `@anthropic-ai/claude-agent-sdk`
-
-**Package**: `@anthropic-ai/claude-agent-sdk` (TypeScript) — bundles a native Claude Code binary.
-
-**Note**: `claude-code-acp` (npm) is a third-party Zed Editor adapter by `carlrannaberg`. Not relevant to choreographer. There is no official "ACP" protocol for Claude Code.
-
-#### Core API
-
-```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk";
-
-for await (const message of query({
-  prompt: "Fix the failing tests",
-  options: {
-    allowedTools: ["Read", "Bash", "Edit"],
-    permissionMode: "acceptEdits",
-    model: "sonnet",
-    maxTurns: 10,
-    maxBudgetUsd: 5.0,
-    includePartialMessages: true,
-    outputFormat: { type: "json_schema", schema: { /* JSON Schema */ } }
-  }
-})) {
-  // message.type: SystemMessage | AssistantMessage | UserMessage | StreamEvent | ResultMessage
-}
-```
-
-#### Message Types
-
-| Type | Description |
-|------|-------------|
-| `SystemMessage` (subtype `init`) | Session metadata, `session_id` |
-| `AssistantMessage` | Claude's response (text + tool calls) |
-| `UserMessage` | Tool results fed back |
-| `StreamEvent` | Raw API events (requires `includePartialMessages`) |
-| `ResultMessage` | Final result with `.result`, `.session_id`, `.cost` |
-
-#### Session Model
-
-- **Capture**: `session_id` from `ResultMessage` or `SystemMessage.data.session_id`
-- **Resume**: `options: { resume: sessionId }` — continues with full context
-- **Fork**: `options: { resume: sessionId, forkSession: true }` — branches history
-
-#### Structured Output
-
-```typescript
-options: {
-  outputFormat: {
-    type: "json_schema",
-    schema: { type: "object", properties: {...}, required: [...] }
-  }
-}
-// Result in message.structured_output
-```
-
-#### Cancellation
-
-Break out of the `for await` loop — generator cleanup runs automatically. No explicit `AbortController` needed.
-
-### Fallback: CLI Subprocess
-
-```bash
-claude -p "prompt" \
-  --output-format stream-json \
-  --verbose \
-  --model sonnet \
-  --permission-mode bypassPermissions \
-  --allowedTools "Bash,Read,Edit" \
-  --max-budget-usd 5 \
-  --json-schema '{"type":"object",...}'
-```
-
-**Key flags**:
-
-| Flag | Purpose |
-|------|---------|
-| `-p` / `--print` | Non-interactive headless mode |
-| `--output-format stream-json` | JSONL events on stdout |
-| `--include-partial-messages` | Token-level streaming |
-| `--json-schema` | Structured output schema |
-| `--resume <id>` | Resume conversation |
-| `--session-id <uuid>` | Set explicit session |
-| `--bare` | Skip hooks/plugins/MCP/CLAUDE.md |
-| `--input-format stream-json` | Bidirectional multi-turn via stdin |
-
-**stream-json event types**: `system` (init), `assistant`, `stream_event`, `result`
-
-### Verdict
-
-**Use the SDK for Ship 2.** It provides typed streaming, session resume, structured output, and no process management. Keep CLI subprocess as fallback for environments where SDK can't be installed. The existing `parseClaudeStreamJson()` in `core/parsers.mjs` already handles the CLI output format.
-
-### Setup Command (for availability probe)
-
-```bash
-npm install @anthropic-ai/claude-agent-sdk
-# OR for CLI fallback:
-# Requires: claude binary at ~/.local/share/claude/versions/<version>/claude
-```
+**Schema enforcement strategy** (council-decided, unanimous): uniform client-side validation via `parseStructuredOutput(raw, schema)` for ALL agents regardless of transport. No auto-fallback to Codex native `outputSchema`. Bifurcated validation would compound maintenance surface with every schema evolution; uniformity wins over the reliability gain.
 
 ---
 
-## 2. Codex — Native `app-server` JSON-RPC
+## ACP Protocol Reference
+
+Source: <https://agentclientprotocol.com> (protocol version 1). TypeScript SDK: `@agentclientprotocol/sdk@0.21.0` (Apache-2.0, maintained by the ACP org).
 
 ### Transport
 
-Newline-delimited JSON (JSONL) over Unix socket. JSON-RPC 2.0 protocol (id = request/response, no id = notification).
+JSON-RPC 2.0 over stdio (primary). Streamable HTTP in draft. Each agent is spawned as a subprocess with piped stdin/stdout; messages framed as newline-delimited JSON.
 
-### Method Inventory
+### Lifecycle
 
-| Method | Direction | Params | Result |
-|--------|-----------|--------|--------|
-| `initialize` | C→S | `{ clientInfo, capabilities }` | `{ userAgent }` |
-| `initialized` | C→S | `{}` | _(notification)_ |
-| `thread/start` | C→S | `{ cwd, model, approvalPolicy, sandbox, serviceName, ephemeral }` | `{ thread: { id } }` |
-| `thread/resume` | C→S | `{ threadId, cwd, model, approvalPolicy, sandbox }` | `{ thread: { id } }` |
-| `thread/list` | C→S | `{ cwd, limit, sortKey, sourceKinds, searchTerm }` | `{ data: Thread[] }` |
-| `thread/name/set` | C→S | `{ threadId, name }` | `{}` |
-| `thread/compact/start` | C→S | _(streaming)_ | _(streaming)_ |
-| `turn/start` | C→S | `{ threadId, input, model, effort, outputSchema }` | `{ turn: { id } }` |
-| `turn/interrupt` | C→S | `{ threadId, turnId }` | `{}` |
-| `review/start` | C→S | `{ threadId, delivery, target }` | `{ reviewThreadId? }` |
-| `account/read` | C→S | `{ refreshToken }` | Account info |
-| `config/read` | C→S | `{ includeLayers, cwd }` | Config object |
-| `broker/shutdown` | C→S | `{}` | `{}` |
+1. **`initialize`** — client sends `{ protocolVersion, clientCapabilities }`; agent replies `{ protocolVersion, agentCapabilities, authMethods? }`. Version + capability negotiation.
+2. **`authenticate`** — invoked when agent advertises auth methods. Agent returns auth state.
+3. **`session/new`** — client requests a new session with `{ cwd, mcpServers?, mode? }`. Agent returns `{ sessionId }`. MCP servers can be injected at session creation.
+4. **`session/load`** — client requests resume of a prior session by `sessionId`.
+5. **`session/prompt`** — client sends user message; agent returns `{ stopReason }` after processing. Streaming updates flow via `session/update` notifications.
+6. **`session/update`** (notification, agent → client) — streaming progress. Types include user/agent message chunks, tool calls, plans, permission requests, mode changes.
+7. **`session/request_permission`** (request, agent → client) — agent asks for permission to perform a sensitive action. Client responds with allow/deny. **Council mandate: non-interactive choreographer sessions auto-deny by default; allowlist overrides declared per-verifier / per-council-member.**
+8. **`session/cancel`** (notification, client → agent) — interrupt.
+9. **`session/set_mode`** — agent supports `ask | architect | code` modes; switched mid-session.
+10. **`fs/read_text_file`, `fs/write_text_file`, `terminal/*`** (requests, agent → client) — agent requests file operations or terminal access from the client.
 
-### Streaming Notifications (S→C)
+### StopReason (from `session/prompt` response)
 
-| Method | Meaning |
-|--------|---------|
-| `turn/started` | Turn began executing |
-| `item/started` | Item started (agentMessage, fileChanged, etc.) |
-| `item/completed` | Item finished |
-| `turn/completed` | Turn finished (status field) |
-| `error` | Server-side error |
+- `end_turn` — normal completion
+- `max_tokens` — context budget exhausted
+- `max_turn_requests` — too many tool-call iterations
+- `refusal` — agent declined
+- `cancelled` — client cancelled mid-turn
 
-**Item types**: `agentMessage` (with `phase`: `"final_answer"`), `fileChanged`, `commandOutput`, `reasoning`
+### Capability exchange (`initialize`)
 
-### Structured Output
+- `clientCapabilities`: `{ fs: { readTextFile, writeTextFile }, terminal }`
+- `agentCapabilities`: `{ loadSession, promptCapabilities, mcpCapabilities, authMethods, modes? }`
 
-Pass `outputSchema` (JSON Schema object) in `turn/start`:
-```javascript
-client.request("turn/start", {
-  threadId,
-  input: [{ type: "text", text: prompt }],
-  model, effort,
-  outputSchema: jsonSchemaObject
-});
-// Result: turnState.lastAgentMessage (phase: "final_answer") → JSON.parse()
-```
+### SDK classes
 
-### Broker Lifecycle
+- `AgentSideConnection` — for agent authors (not used by choreographer directly).
+- `ClientSideConnection` — for client authors (this is the class the choreographer broker wraps per-agent).
+- `ndJsonStream` — helper for reading/writing newline-delimited JSON.
 
-1. **Spawn**: `ensureBrokerSession(cwd)` creates temp dir, generates endpoint (`unix:<dir>/broker.sock`), spawns detached `node app-server-broker.mjs serve --endpoint <ep> --cwd <cwd> --pid-file <path>`
-2. **Ready check**: Poll socket every 50ms, timeout 2000ms
-3. **Persist**: Write `<stateDir>/broker.json` with `{ endpoint, pidFile, logFile, sessionDir, pid }`
-4. **Teardown**: `broker/shutdown` method → broker responds, closes sockets, exits. Then kill PID, remove files.
-
-### Socket Endpoint Resolution
-
-```
-unix:<sessionDir>/broker.sock     (macOS/Linux)
-pipe:\\.\pipe\<name>-codex-app-server  (Windows)
-```
-
-Resolution priority:
-1. Explicit `brokerEndpoint` option
-2. `CODEX_COMPANION_APP_SERVER_ENDPOINT` env var
-3. `loadBrokerSession(cwd)?.endpoint` from `broker.json`
-4. Spawn new broker
-5. If `disableBroker: true` → stdio transport (direct `codex app-server` child)
-
-### BUSY Fallback
-
-Broker allows **one active request per socket**. Second request gets:
-```json
-{ "error": { "code": -32001, "message": "Shared Codex broker is busy." } }
-```
-Client retries with `disableBroker: true` (direct spawn).
-
-**Exception**: `turn/interrupt` is allowed during active stream from a different socket.
-
-### Thread Resume
-
-```javascript
-client.request("thread/resume", { threadId, cwd, model, approvalPolicy, sandbox });
-// Discovery: thread/list with sourceKinds: ["appServer"], searchTerm prefix match
-```
-
-### Stop Hook Contract
-
-- **Timeout**: 15 minutes (`900,000ms`)
-- **Input** (stdin): `{ session_id, cwd, last_assistant_message }`
-- **Output** (stdout): `{ decision: "block", reason: "..." }` or nothing (allows stop)
-- **Parse**: `"ALLOW: ..."` → pass, `"BLOCK: ..."` → reject
-
-### Env Vars (Session Lifecycle)
-
-| Variable | Injected On | Purpose |
-|----------|-------------|---------|
-| `CODEX_COMPANION_SESSION_ID` | SessionStart | Track jobs per session |
-| `CLAUDE_PLUGIN_DATA` | SessionStart | Plugin data directory |
-| `CODEX_COMPANION_APP_SERVER_ENDPOINT` | Broker spawn | Socket address |
-| `CODEX_COMPANION_APP_SERVER_PID_FILE` | Broker spawn | Process tracking |
-| `CODEX_COMPANION_APP_SERVER_LOG_FILE` | Broker spawn | Log location |
-
-### Verdict
-
-**Use native `app-server` JSON-RPC directly.** No ACP shim needed. The wire format is well-documented in the external plugin. Structured output, thread resume, streaming, and cancellation all work over the broker's Unix socket. BUSY fallback to direct spawn provides resilience.
-
-### Setup Command (for availability probe)
-
-```bash
-codex --version
-# Requires: codex CLI installed, authenticated
-```
+Example agent: <https://github.com/agentclientprotocol/typescript-sdk> (`examples-agent.ts`). Example client: `examples-client.ts`.
 
 ---
 
-## 3. OpenCode — HTTP API via `opencode serve`
+## ACP vs Codex app-server Feature Comparison
 
-### Transport
+Codex has a native `app-server` JSON-RPC protocol that predates its ACP adapter. Under ACP-first, Codex connects via `codex-acp` adapter and client-side schema validation is applied uniformly. Native `app-server` remains the fallback.
 
-HTTP REST API with SSE streaming. **No WebSocket** — streaming uses Server-Sent Events.
+| Feature | Codex app-server (native) | ACP | Council decision |
+|---------|:---:|:---:|---|
+| Structured output (schema-enforced) | Yes (`outputSchema`) | No (client-side parse against schema) | Uniform client-side validation for all agents. No Codex auto-fallback. |
+| Code review turn | Yes (`review/start`) | No | Adversarial review (Ship 5) uses regular ACP `session/prompt`. |
+| BUSY/load management | Yes (broker-level) | No | Broker implements load queue + DLQ + idempotency + circuit-breaker (mandatory from Ship 2). |
+| Mode switching | No | Yes (`session/set_mode`) | ACP-only capability; used for Ship 3 council roles + Ship 4 verifier modes. |
+| MCP server injection | No | Yes (`session/new` param) | ACP-only; used for per-verifier tool injection. |
+| Slash commands | No | Yes (advertise + execute) | Lower priority; revisit post-Ship-4. |
+| Permission requests | App-level | Yes (`session/request_permission`) | ACP permission protocol used; default auto-deny per council mandate. |
 
-### Installation
-
-| Item | Value |
-|------|-------|
-| Binary | `/opt/homebrew/Cellar/opencode/1.14.33/bin/opencode` |
-| Version | 1.14.33 |
-| Package | Homebrew formula |
-
-### Server Start
-
-```bash
-opencode serve --port 4096 --hostname 127.0.0.1
-```
-
-| Flag | Default | Purpose |
-|------|---------|---------|
-| `--port` | `4096` | HTTP port |
-| `--hostname` | `127.0.0.1` | Bind address |
-| `--pure` | `false` | Disable external plugins |
-| `--mdns` | `false` | mDNS discovery |
-
-### HTTP API Endpoints
-
-#### Core Operations
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/global/health` | Health check → `{ healthy: true, version }` |
-| POST | `/session` | Create session → `{ id, title }` |
-| GET | `/session` | List sessions |
-| GET | `/session/:id` | Get session details |
-| DELETE | `/session/:id` | Delete session |
-| **POST** | **`/session/:id/message`** | **Send message, wait for response** |
-| POST | `/session/:id/prompt_async` | Send message, return 204 immediately |
-| POST | `/session/:id/abort` | Cancel running session |
-| GET | `/session/:id/message` | List messages (`?limit=`) |
-| GET | `/event` | SSE stream (global) |
-| GET | `/doc` | OpenAPI 3.1 spec |
-
-#### Request Shape (POST `/session/:id/message`)
-
-```json
-{
-  "model": { "providerID": "anthropic", "modelID": "claude-sonnet-4-20250514" },
-  "agent": "coder",
-  "system": "optional system prompt override",
-  "parts": [{ "type": "text", "text": "Fix the failing tests" }]
-}
-```
-
-#### Response Shape
-
-```json
-{
-  "info": { "id": "msg_...", "role": "assistant", "sessionID": "...", "createdAt": "..." },
-  "parts": [
-    { "type": "text", "text": "I'll fix those tests..." },
-    { "type": "tool_use", "toolName": "Bash", "input": {...}, "output": {...} }
-  ]
-}
-```
-
-### Streaming (SSE)
-
-```
-GET /event
-Accept: text/event-stream
-
-data: {"type": "server.connected", ...}
-data: {"type": "message.start", "sessionID": "...", ...}
-data: {"type": "message.delta", "content": "...", ...}
-data: {"type": "message.complete", ...}
-```
-
-### SDK (`@opencode-ai/sdk`)
-
-```typescript
-import { createOpencode } from "@opencode-ai/sdk"
-const { client } = await createOpencode({ signal, timeout: 5000 })
-
-const session = await client.session.create({ body: { title: "review" } })
-const response = await client.session.prompt({
-  path: { id: session.id },
-  body: { parts: [{ type: "text", text: "Fix tests" }], model: { providerID: "anthropic", modelID: "claude-sonnet-4-20250514" } }
-})
-await client.session.abort({ path: { id: session.id } })
-```
-
-### Session Model
-
-- Persistent server-side sessions
-- `parentID` enables session forking
-- Sessions survive server restarts
-- Status tracking: `GET /session/status` → `{ [id]: "running" | "idle" }`
-
-### Cancellation
-
-`POST /session/:id/abort` → returns boolean success.
-
-### Verdict
-
-**`opencode serve` is fully viable.** Provides structured I/O, SSE streaming, session persistence, and clean abort. The availability probe must fail loud with setup instructions per the plan.
-
-### Setup Command (for availability probe fail-loud message)
-
-```bash
-opencode serve --port 4096 &
-# User must start this manually before choreographer can use OpenCode as an agent.
-```
+**Gaps are not blockers.** Structured output is already handled client-side. BUSY/load management is in the Ship 2 broker spec.
 
 ---
 
-## 4. Gemini — Subprocess Only
+## Per-Agent ACP Setup
 
-### Transport
+### Claude
 
-Subprocess spawn. No programmatic API beyond CLI invocation. `--acp` flag starts an A2A server mode (Google's Agent-to-Agent protocol) — not useful for subprocess orchestration.
+**Primary ACP path**: `@agentclientprotocol/claude-agent-acp@0.32.0`.
 
-### Installation
+Package npm-verified: Apache-2.0, 19 versions, depends on `@agentclientprotocol/sdk@0.21.0`, `@anthropic-ai/claude-agent-sdk@0.2.126`, and `zod`. Ships the `claude-agent-acp` binary. Published by the ACP organization (continuity of maintenance established via the `@zed-industries/claude-code-acp` → `@agentclientprotocol/claude-agent-acp` transfer).
 
-| Item | Value |
-|------|-------|
-| Binary | `/Users/mk/.volta/bin/gemini` |
-| Version | 0.37.1 |
-| Package | `@google/gemini-cli` (npm global) |
-
-### Invocation Pattern
-
+**Install + run**:
 ```bash
-# Production invocation
-gemini -y -m gemini-2.5-pro -o json -p "your prompt here"
-
-# With streaming events
-gemini -y -m gemini-2.5-flash -o stream-json -p "your prompt here"
-
-# Stdin piping (appended to -p)
-echo "context" | gemini -y -o json -p "analyze this"
+npm install @agentclientprotocol/claude-agent-acp
+# Broker spawns: claude-agent-acp  (stdio server)
 ```
 
-### Key Flags
+**Known gaps vs native**:
+- Session resume semantics: ACP `session/load` is documented but the Claude adapter's mapping to Claude CLI session state is not yet independently verified. `@anthropic-ai/claude-agent-sdk` offers `threadId`-based resume via its own API. Treat as a Ship 2 implementation risk; validate via integration test before declaring Ship 2 complete.
+- `@anthropic-ai/claude-agent-sdk@0.2.128` is Anthropic first-party (175 versions, actively maintained by the Anthropic team). It is the **alternate native fallback** alongside CLI subprocess. It does NOT itself speak ACP — it is a programmatic SDK.
 
-| Flag | Purpose |
-|------|---------|
-| `-p "prompt"` | Non-interactive headless mode (required) |
-| `-y` / `--yolo` | Auto-approve all tool actions (required for subprocess) |
-| `-m <model>` | Model selection |
-| `-o json` | Structured JSON output |
-| `-o stream-json` | JSONL streaming events |
-| `-s` / `--sandbox` | Sandbox mode |
-| `--resume <id>` | Resume session (interactive only) |
+**Availability probe**: spawn `claude-agent-acp` + send `initialize`. If spawn fails or `initialize` times out → fall back to SDK then to CLI subprocess.
 
-### Output Format (`-o json`)
+### Codex
 
-```json
-{
-  "session_id": "uuid",
-  "response": "model's text response",
-  "stats": {
-    "models": {
-      "gemini-2.5-pro": {
-        "api": { "totalRequests": 1, "totalErrors": 0, "totalLatencyMs": 1234 }
-      }
-    }
-  }
-}
-```
+**Primary ACP path**: `codex-acp` (Zed-maintained adapter, repo `github.com/zed-industries/codex-acp` mirrored at `github.com/agentclientprotocol/codex-acp`). Spawns Codex CLI wrapped in ACP stdio.
 
-### Stream-JSON Events (`-o stream-json`)
+**Native fallback**: `codex app-server` JSON-RPC over Unix socket. The external `@openai/codex-plugin-cc` plugin demonstrates this transport in production. Broker code at `/Users/mk/Downloads/codex-plugin-cc-main/plugins/codex/scripts/app-server-broker.mjs`.
 
-| Event Type | Content |
-|-----------|---------|
-| `init` | Session metadata |
-| `message` | User/assistant chunks |
-| `tool_use` | Tool call requests |
-| `tool_result` | Tool outputs |
-| `error` | Non-fatal warnings |
-| `result` | Final outcome with stats |
+**Known gaps**:
+- Codex native path supports `outputSchema` on `turn/start` for server-side schema enforcement. ACP does not. **Council-decided**: no auto-fallback; uniform client-side validation regardless of transport.
+- Codex app-server BUSY semantics (one active request per socket) are native-only. Under ACP the broker load queue handles the equivalent.
 
-### Retry/Fallback/Skip Logic (from council skill)
+**Availability probe**: `codex --version` + `codex-acp --help` (if installed). If ACP adapter missing → fallback to `codex app-server` via broker endpoint resolution (Unix socket / named pipe).
 
-1. **Probe**: `gemini -m <model> -p "ping"` — 2 attempts
-2. **Failure signals**: `unknown model`, `not found`, `MODEL_CAPACITY_EXHAUSTED`, `429`, `rate limit`, `quota`, non-zero exit
-3. **Fallback**: If primary fails 2x, try `--gemini-fallback=<model>` with same 2-attempt probe
-4. **Skip**: If all probes fail, remove gemini from participation — don't crash
+### OpenCode
 
-### Structured Output Limitations
+**Primary ACP path**: OpenCode CLI natively supports ACP stdio transport per OpenCode docs.
 
-- JSON envelope (`-o json`) provides `response` as a string — no schema enforcement
-- No `--json-schema` or `outputSchema` equivalent
-- Structured output must be prompted (instruct model to emit JSON) then parsed client-side
-- Parse failure → flag as `precision: line-approx` per Evolution B
+**Native fallback**: `opencode serve --port 4096` HTTP API + SSE. Fail-loud availability probe — serve is required only when ACP stdio is unavailable; the primary path is ACP stdio.
 
-### Session Model
+Homebrew binary at `/opt/homebrew/Cellar/opencode/1.14.33/bin/opencode` (verified Ship 0 inventory). `@opencode-ai/sdk` is the HTTP client library.
 
-- **One-shot only** for subprocess. No headless resume mechanism.
-- `--resume <id>` exists but requires interactive TTY.
-- `session_id` returned in JSON output but not reusable in `-p` mode.
+**Known gaps**:
+- HTTP path offers session persistence beyond process lifetime. ACP session persistence via `session/load` + agent-side storage is model-dependent.
+- `opencode serve` mandate: reframed (council mandate) as fallback-only. Plan README + `/choreo:opencode` command copy must say "serve is required when ACP stdio unavailable," not first-class onboarding.
 
-### Cancellation
+**Availability probe**: spawn `opencode acp` (or equivalent native ACP entry) + `initialize`. If fails → check `opencode serve` health endpoint at `http://[::]:4096/global/health`. If both fail → fail loud with setup command.
 
-SIGTERM. No graceful protocol. Process terminates immediately.
+### Gemini
 
-### Current Choreographer Status
+**Primary ACP path**: Gemini CLI natively supports ACP stdio per Gemini docs. **Not exercised in choreographer until Ship 5+** per user lock.
 
-Gemini is **NOT in the choreographer REGISTRY** (`core/runners.mjs`). Ship 1 adds it.
+**Native fallback**: subprocess `gemini -y -m <model> -o json -p "<prompt>"`.
 
-### Verdict
+Binary at `/Users/mk/.volta/bin/gemini` (version 0.37.1 verified Ship 0 inventory).
 
-**Subprocess-only confirmed.** The `--acp` mode (A2A server) is a Google protocol for agent-to-agent communication — different from what we need. Subprocess invocation with `-y -o json -p` is the only viable programmatic interface.
+**Distinction from `--acp` flag**: Gemini's `--acp` flag starts an A2A (Agent-to-Agent) server — Google's inter-agent protocol, unrelated to our ACP. The native ACP stdio path is a separate CLI entry and does not use `--acp`.
 
-### Setup Command (for availability probe)
+**Ship 5+ inclusion criteria** (council-binding):
+1. Ship 2 claude/codex/opencode ACP paths must be passing integration tests with <5% parse failure on council/verifier schemas.
+2. Ship 3 council must run successfully across the three ACP-first agents for N consecutive invocations.
+3. Ship 4 verifier loop must have demonstrated convergence on at least one real verifier spec.
+4. Only then does Gemini's ACP adapter enter Ship 5+ scope.
 
-```bash
-gemini --version
-# Requires: @google/gemini-cli installed, GOOGLE_API_KEY or equivalent auth
-```
+**Availability probe (Ship 5+)**: spawn `gemini` in ACP mode + `initialize`. Retry + fallback + skip logic from council skill applies (2 primary attempts → 2 fallback attempts → skip).
 
 ---
 
-## Cross-Cutting Concerns
+## Hard Success Metrics — Ship 2→3 Gate
 
-### Adapter Interface Contract (Ship 2 shape)
+Council confirmed **defer exact threshold numbers to implementation** (baseline-then-observe for first week of Ship 2 runs). Metric *definitions* are final here; numeric thresholds land in `.choreographer/metrics-thresholds.json` after baseline collection.
 
-Based on the research, the adapter interface should be:
+### Metrics to instrument (Ship 1 deliverable via `core/observability.mjs`)
 
-```typescript
-interface AgentAdapter {
-  invoke(params: {
-    prompt: string;
-    model?: string;
-    effort?: string;
-    structuredSchema?: object;  // JSON Schema
-    timeout?: number;
-    onProgress?: (event: StreamEvent) => void;
-    sandbox?: string;
-    resumeThreadId?: string;
-  }): Promise<{
-    output: string;
-    error?: string;
-    exitCode?: number;
-    structured?: object;
-    threadId?: string;
-  }>;
+1. **Task success rate** — % of agent invocations that produce usable structured output (schema-parsed, no timeout, no auth failure). Per-agent breakdown.
+2. **Synthesis latency p95** — wall-clock time from `/choreo:council` invocation to final deliverable write. Measured per round count.
+3. **Evidence-to-claim ratio** — proportion of structured claims in council positions + verifier reports that cite `file + line_start + line_end`. Best-effort for subprocess agents; flagged `precision: line-approx` per Evolution B.
+4. **Cancel reliability** — % of mid-flight `session/cancel` invocations that cleanly terminate the ACP session within 5 seconds. Per-agent breakdown.
+5. **User selection rate** — when `/choreo:council --members=...` offers a member choice, which agents the user actually picks. Drives council-member defaults.
 
-  checkAvailability(): Promise<{
-    available: boolean;
-    reason?: string;
-    setupCommand?: string;
-  }>;
+### Baseline capture method
 
-  supports: {
-    streaming: boolean;
-    structuredOutput: boolean;
-    threadResume: boolean;
-    cancellation: boolean;
-    background: boolean;
-  };
-}
-```
+Ship 1 writes NDJSON events at `~/.choreo/logs/<date>.ndjson` for every agent invocation, phase transition, broker request, and verifier round. Ship 2 runs one full week of real usage. `scripts/metrics-baseline.mjs` (created in Ship 2 pre-work) aggregates NDJSON → baseline report.
 
-### Capabilities Matrix
+### Ratchet rules
 
-| Capability | Claude (SDK) | Codex (app-server) | OpenCode (HTTP) | Gemini (subprocess) |
-|-----------|:---:|:---:|:---:|:---:|
-| Streaming | async generator | JSONL notifications | SSE | JSONL stdout |
-| Structured output (schema-enforced) | Yes | Yes | Partial (typed responses) | No (prompt-only) |
-| Thread/session resume | Yes | Yes | Yes | No |
-| Cancellation | generator break | `turn/interrupt` | `POST /abort` | SIGTERM |
-| Multi-turn in-process | Yes (generator input) | Yes (multiple turns on thread) | Yes (session messages) | No |
-| Background/async | N/A | daemon (broker) | daemon (serve) | N/A |
-| Availability probe | SDK import + auth check | `codex --version` + socket connect | `GET /global/health` | `gemini -p "ping"` |
+After baseline week:
+- Task success rate: commit threshold at floor = `baseline_p25 - 5pp` (never regress below 25th percentile minus 5 percentage points).
+- Synthesis latency p95: commit threshold at ceiling = `baseline_p95 × 1.2`.
+- Evidence-to-claim ratio: commit threshold at floor = `baseline_mean - 1σ`.
+- Cancel reliability: commit threshold at floor = `95%` (hard minimum regardless of baseline).
+- User selection rate: no threshold — observational signal for council-default tuning only.
 
-### Dependencies to Install (Ship 2)
+**Gate behavior**: if any Ship 2→3 run violates a committed threshold on the critical path, Ship 3 readiness is revoked until root cause is identified and fixed.
 
-| Agent | Package | Version |
-|-------|---------|---------|
-| Claude | `@anthropic-ai/claude-agent-sdk` | latest |
-| Codex | _(none — speaks wire protocol directly)_ | — |
-| OpenCode | `@opencode-ai/sdk` | latest |
-| Gemini | _(none — subprocess spawn)_ | — |
+### Council non-regression gate
 
-### Risk Assessment
+Ship 3 council port must demonstrate non-regression vs baseline on all four load-bearing metrics (task success, synthesis latency, evidence ratio, cancel reliability). `user selection rate` is observational.
 
-1. **Claude SDK stability**: New package. Pin version. Fallback to CLI subprocess if breaking changes land.
-2. **Codex broker single-request limit**: BUSY fallback to direct spawn handles this. Circuit-breaker should trip after N consecutive BUSY.
-3. **OpenCode serve must be running**: Fail-loud with exact `opencode serve &` setup command. No silent subprocess fallback per plan mandate.
-4. **Gemini JSON output lacks schema enforcement**: All Gemini structured output must be validated client-side. Evolution B `precision: line-approx` flag applies.
-5. **Timeout budgets**: Codex broker has no built-in timeout for turns. Must enforce externally. OpenCode HTTP has server-side timeouts. Claude SDK and Gemini subprocess need external SIGTERM timers.
+---
+
+## Risks + Open Questions
+
+### Risks
+
+1. **ACP SDK version churn** — `@agentclientprotocol/sdk@0.21.0` and `@agentclientprotocol/claude-agent-acp@0.32.0` are both pre-1.0 (0.21 and 0.32 respectively; the latter published within past 24 hours). Pin versions in `package.json` with caret ranges `^0.21.0` and `^0.32.0`. Monitor for breaking changes; circuit-breaker tripped adapter probe reactivates only after successful `initialize` against pinned version.
+2. **Claude ACP adapter session resume gap** — `@agentclientprotocol/claude-agent-acp` adapter's mapping of `session/load` to Claude CLI state is unverified. Mitigation: Ship 2 integration test dedicated to session resume round-trip; if fails, use native SDK resume via `@anthropic-ai/claude-agent-sdk` fallback path.
+3. **`opencode serve` fallback availability** — if OpenCode ACP stdio path is missing in some installed versions, `serve` fallback must be runnable. Availability probe fails loud with exact setup command.
+4. **Gemini native ACP verification** — Gemini ACP stdio support is documented but not independently verified in this research. Acceptable because Ship 5+ lock defers the issue.
+5. **Prompt injection via verifier feedback** (cross-ref Ship 4) — sanitizer + 2K cap is mandatory before Builder context sees verifier text.
+6. **Broker resilience single-point failure** — DLQ + idempotency + circuit-breaker mandatory from Ship 2 day one.
+
+### Open questions (post-Ship-2-baseline)
+
+- Exact ratchet threshold numbers per §Hard Success Metrics. Commit before Ship 3 gate.
+- (Q2 dropped by council — manual `/choreo:verify --agent=codex` trigger already handled by uniform client-side schema; placeholder in Ship 4 spec only.)
+- (Q3 resolved by council — ACP permission default = auto-deny in non-interactive with explicit per-member allowlist override. See plan §14.)
 
 ---
 
 ## Phase 0 Gate: PASS
 
-All four transports are researched, documented, and have clear implementation paths. The adapter interface shape is defined. Ship 2 can proceed.
+All four transports have clear ACP-first paths with native fallbacks. Package identities are npm-verified. Schema enforcement strategy is uniform across agents. Metrics are defined + ready to instrument. Risks are enumerated with mitigations.
+
+Ship 2 adapter implementation may proceed once the atomic plan + research commit lands.
