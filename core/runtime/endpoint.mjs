@@ -10,7 +10,7 @@
 import { createServer, connect } from 'node:net';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { existsSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 
 /**
  * Resolve the socket path for the current platform.
@@ -23,8 +23,12 @@ export function resolveEndpointPath(sessionId = 'default') {
     // Windows: use a named pipe pattern
     return `\\\\.\\pipe\\choreo-broker-${sessionId}`;
   }
-  // Unix: use a socket file in tmpdir
-  return join(tmpdir(), `choreo-broker-${sessionId}.sock`);
+  const tmpBase = tmpdir().length > 40 ? '/tmp' : tmpdir();
+  const runtimeDir = join(tmpBase, `choreo-${process.getuid?.() ?? 'user'}`);
+  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  try { chmodSync(runtimeDir, 0o700); } catch { /* best effort */ }
+  const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9._-]/g, '-');
+  return join(runtimeDir, `broker-${safeSessionId}.sock`);
 }
 
 /**
@@ -33,9 +37,10 @@ export function resolveEndpointPath(sessionId = 'default') {
  * @param {object} opts
  * @param {string} opts.path — socket path
  * @param {function} opts.onMessage — (message, respond) => void
+ * @param {string} [opts.token] — optional bearer token required on every message
  * @returns {Promise<import('node:net').Server>}
  */
-export async function createEndpoint({ path, onMessage }) {
+export async function createEndpoint({ path, onMessage, token }) {
   // Clean up existing socket file
   if (process.platform !== 'win32' && existsSync(path)) {
     try {
@@ -59,6 +64,14 @@ export async function createEndpoint({ path, onMessage }) {
             const respond = (response) => {
               socket.write(JSON.stringify(response) + '\n');
             };
+            if (!message || typeof message !== 'object' || typeof message.method !== 'string') {
+              respond({ id: message?.id ?? null, error: 'invalid_request' });
+              continue;
+            }
+            if (token && message.token !== token) {
+              respond({ id: message.id ?? null, error: 'unauthorized' });
+              continue;
+            }
             onMessage(message, respond);
           } catch {
             // Invalid JSON — ignore
@@ -67,7 +80,12 @@ export async function createEndpoint({ path, onMessage }) {
       });
     });
 
-    server.listen(path, () => resolve(server));
+    server.listen(path, () => {
+      if (process.platform !== 'win32') {
+        try { chmodSync(path, 0o600); } catch { /* best effort */ }
+      }
+      resolve(server);
+    });
     server.on('error', reject);
   });
 }

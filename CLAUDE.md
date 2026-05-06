@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **llms-choreographer** (3694 symbols, 4317 relationships, 51 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **llms-choreographer** (1950 symbols, 2578 relationships, 51 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -50,12 +50,9 @@ This project is indexed by GitNexus as **llms-choreographer** (3694 symbols, 431
 
 Active plan: `docs/plans/2026-05-05-acp-migration-plan.md` (5 ships: foundation → ACP broker → council → verifier loop → adversarial review).
 
-**Status:** All 5 ships SHIPPED + council review fixes applied. Broker wired into all production paths. 164 tests pass.
+**Status:** All 5 ships SHIPPED + council review fixes applied. Broker wired into all production paths. 172 tests pass.
 
 **Council review (2026-05-06):** 5-member unanimous BLOCK resolved. All 13 findings (P0-P2) fixed. Decision: `debates/council/code-review-plan-implementation-6aaecd/decision.md`. Fixes plan: `docs/plans/2026-05-06-council-fixes-implementation-plan.md`.
 
-**Deferred residuals (post-merge follow-up):**
-- **F8 residual** — `core/companion.mjs`: known flags consumed after first positional task token.
-- **NFF1** — `core/runners.mjs`: env allowlist lacks additive opt-in (`CHOREO_AGENT_ENV_ALLOW`).
-- **Socket chmod 0600** (SEC-003) — `core/runtime/endpoint.mjs`: Unix socket has no access control.
+**Remaining deferred item:**
 - **Gemini adapter** — deferred per user lock.

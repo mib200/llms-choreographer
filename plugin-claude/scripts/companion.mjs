@@ -92,7 +92,7 @@ function parseStructuredOutput(raw, schema) {
 }
 
 // core/runners.mjs
-import { spawn as spawn5, spawnSync } from "node:child_process";
+import { spawn as spawn2, spawnSync } from "node:child_process";
 
 // core/agents/base.mjs
 var AgentAdapter = class {
@@ -14687,6 +14687,7 @@ var CLIENT_METHODS = {
   terminal_release: "terminal/release",
   terminal_wait_for_exit: "terminal/wait_for_exit"
 };
+var PROTOCOL_VERSION = 1;
 
 // node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js
 var zAuthCapabilities = external_exports.object({
@@ -16988,6 +16989,7 @@ var ENV_ALLOW_EXACT = /* @__PURE__ */ new Set([
   "OPENAI_BASE_URL",
   "CHOREO_LOG_DIR",
   "CHOREO_LOG_MAX_BYTES",
+  "CHOREO_AGENT_ENV_ALLOW",
   "CHOREO_AGENT_ENV_PASSTHROUGH"
 ]);
 var ENV_ALLOW_PREFIXES = [
@@ -17000,13 +17002,23 @@ var ENV_ALLOW_PREFIXES = [
 ];
 function buildAgentEnv(src = process.env) {
   if (src.CHOREO_AGENT_ENV_PASSTHROUGH === "1") return { ...src };
+  const extraAllow = parseExtraAllowlist(src.CHOREO_AGENT_ENV_ALLOW);
   const out = /* @__PURE__ */ Object.create(null);
   for (const [key, value] of Object.entries(src)) {
-    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
+    if (ENV_ALLOW_EXACT.has(key) || extraAllow.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
       out[key] = value;
     }
   }
   return out;
+}
+function parseExtraAllowlist(value) {
+  const allowed = /* @__PURE__ */ new Set();
+  if (!value) return allowed;
+  for (const raw of String(value).split(/[,\s:]+/)) {
+    const key = raw.trim();
+    if (/^[A-Z_][A-Z0-9_]*$/.test(key)) allowed.add(key);
+  }
+  return allowed;
 }
 
 // core/agents/acp-client.mjs
@@ -17100,6 +17112,7 @@ var AcpClient = class {
     this.connection = null;
     this.proc = null;
     this.sessionId = null;
+    this.outputChunks = [];
   }
   /**
    * Spawn agent, initialize connection, and optionally authenticate.
@@ -17115,15 +17128,18 @@ var AcpClient = class {
       makeClientHandler({
         interactive: this.interactive,
         permissionAllowlist: this.permissionAllowlist,
-        onUpdate: this.onUpdate
+        onUpdate: (notification) => {
+          this.recordUpdate(notification);
+          this.onUpdate?.(notification);
+        }
       }),
       stream
     );
     const initResponse = await this.connection.initialize({
-      protocolVersion: "2025-06-12",
+      protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: "choreographer", version: "1.0.0" },
-      capabilities: opts.capabilities ?? {
-        fs: { readTextFile: true, writeTextFile: true },
+      clientCapabilities: opts.capabilities ?? {
+        fs: { readTextFile: false, writeTextFile: false },
         terminal: false
       }
     });
@@ -17143,6 +17159,7 @@ var AcpClient = class {
   async newSession(params = {}) {
     const response = await this.connection.newSession({
       cwd: process.cwd(),
+      mcpServers: [],
       ...params
     });
     this.sessionId = response.sessionId;
@@ -17155,7 +17172,7 @@ var AcpClient = class {
    * @returns {Promise<void>}
    */
   async resumeSession(sessionId) {
-    await this.connection.resumeSession({ sessionId });
+    await this.connection.loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] });
     this.sessionId = sessionId;
   }
   /**
@@ -17170,10 +17187,10 @@ var AcpClient = class {
   async prompt({ prompt, structuredSchema, timeout }) {
     if (!this.connection) throw new Error("not initialized");
     if (!this.sessionId) throw new Error("no active session");
-    const messages = [{ role: "user", content: [{ type: "text", text: prompt }] }];
+    this.outputChunks = [];
     const promptPromise = this.connection.prompt({
       sessionId: this.sessionId,
-      messages
+      prompt: [{ type: "text", text: prompt }]
     });
     let response;
     if (timeout) {
@@ -17188,12 +17205,10 @@ var AcpClient = class {
     } else {
       response = await promptPromise;
     }
-    let output = "";
-    if (response.output) {
+    let output = this.outputChunks.join("");
+    if (!output && response.output) {
       for (const block of response.output) {
-        if (block.type === "text") {
-          output += block.text;
-        }
+        if (block.type === "text") output += block.text;
       }
     }
     const result = { output: output.trim(), sessionId: this.sessionId, transport: "acp" };
@@ -17225,21 +17240,51 @@ var AcpClient = class {
       this.sessionId = null;
     }
   }
+  recordUpdate(notification) {
+    const update = notification?.update;
+    if (update?.sessionUpdate !== "agent_message_chunk") return;
+    const content = update.content;
+    if (content?.type === "text") this.outputChunks.push(content.text);
+  }
   /**
    * Tear down the connection and kill the subprocess.
    */
   async teardown() {
     await this.closeSession();
     if (this.proc) {
-      this.proc.kill("SIGTERM");
+      const proc = this.proc;
       this.proc = null;
+      await terminateProcess(proc);
     }
     this.connection = null;
   }
 };
+function terminateProcess(proc) {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      finish();
+    }, 1e3);
+    timer.unref?.();
+    proc.once("close", () => {
+      clearTimeout(timer);
+      finish();
+    });
+    proc.stdin?.destroy();
+    proc.stdout?.destroy();
+    proc.stderr?.destroy();
+    proc.kill("SIGTERM");
+  });
+}
 
 // core/agents/claude.mjs
-import { spawn as spawn2 } from "node:child_process";
 var ClaudeAdapter = class extends AgentAdapter {
   get name() {
     return "claude";
@@ -17268,26 +17313,18 @@ var ClaudeAdapter = class extends AgentAdapter {
       }
     } catch {
     }
-    try {
-      const { spawnSync: spawnSync3 } = await import("node:child_process");
-      const r = spawnSync3("claude", ["--version"], { encoding: "utf8", timeout: 5e3, env: buildAgentEnv() });
-      if (r.status === 0) {
-        return { available: true, transport: "native", reason: "ACP stdio unavailable, using CLI fallback" };
-      }
-      return { available: false, reason: "claude CLI not found", setupCommand: "/choreo:claude" };
-    } catch (e) {
-      return { available: false, reason: e.message, setupCommand: "/choreo:claude" };
-    }
+    return { available: false, reason: "claude ACP stdio unavailable", setupCommand: "/choreo:claude" };
   }
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
-    if (availability.transport === "acp") {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
-      } catch {
-      }
+    if (availability.transport !== "acp") {
+      return { output: "", error: availability.reason ?? "claude ACP unavailable", exitCode: 1, structured: null, transport: "acp" };
     }
-    return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+    } catch (e) {
+      return { output: "", error: `claude ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: "acp" };
+    }
   }
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode }) {
     const client = new AcpClient({
@@ -17311,39 +17348,9 @@ var ClaudeAdapter = class extends AgentAdapter {
       await client.teardown();
     }
   }
-  async _invokeNative({ prompt, model, effort, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ["--print", "--output-format", "stream-json", "--verbose", prompt, "--dangerously-skip-permissions"];
-      if (model) args.splice(0, 0, "--model", model);
-      const proc = spawn2("claude", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-      const timer = timeout ? setTimeout(() => {
-        proc.kill("SIGTERM");
-      }, timeout) : null;
-      proc.stdout.on("data", (d) => out.push(d));
-      proc.stderr.on("data", (d) => err.push(d));
-      proc.on("close", (code) => {
-        if (timer) clearTimeout(timer);
-        const raw = Buffer.concat(out).toString();
-        const output = parseClaudeStreamJson(raw);
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: "native" });
-      });
-      proc.on("error", (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: "", error: e.message, exitCode: 1, transport: "native" });
-      });
-    });
-  }
 };
 
 // core/agents/codex.mjs
-import { spawn as spawn3 } from "node:child_process";
 var CodexAdapter = class extends AgentAdapter {
   get name() {
     return "codex";
@@ -17373,13 +17380,14 @@ var CodexAdapter = class extends AgentAdapter {
   }
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
-    if (availability.transport === "acp") {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
-      } catch {
-      }
+    if (availability.transport !== "acp") {
+      return { output: "", error: availability.reason ?? "codex ACP unavailable", exitCode: 1, structured: null, transport: "acp" };
     }
-    return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+    } catch (e) {
+      return { output: "", error: `codex ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: "acp" };
+    }
   }
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId }) {
     const client = new AcpClient({
@@ -17402,39 +17410,9 @@ var CodexAdapter = class extends AgentAdapter {
       await client.teardown();
     }
   }
-  async _invokeNative({ prompt, model, effort, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ["exec", prompt];
-      if (model) args.splice(0, 0, "--model", model);
-      if (effort) args.splice(0, 0, "--effort", effort);
-      const proc = spawn3("codex", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-      const timer = timeout ? setTimeout(() => {
-        proc.kill("SIGTERM");
-      }, timeout) : null;
-      proc.stdout.on("data", (d) => out.push(d));
-      proc.stderr.on("data", (d) => err.push(d));
-      proc.on("close", (code) => {
-        if (timer) clearTimeout(timer);
-        const output = Buffer.concat(out).toString().trim();
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: "native" });
-      });
-      proc.on("error", (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: "", error: e.message, exitCode: 1, transport: "native" });
-      });
-    });
-  }
 };
 
 // core/agents/opencode.mjs
-import { spawn as spawn4 } from "node:child_process";
 var OpenCodeAdapter = class extends AgentAdapter {
   get name() {
     return "opencode";
@@ -17459,7 +17437,7 @@ var OpenCodeAdapter = class extends AgentAdapter {
       }
       return {
         available: false,
-        reason: "opencode ACP stdio unavailable. Start HTTP fallback with: opencode serve &",
+        reason: "opencode ACP stdio unavailable",
         setupCommand: "/choreo:opencode"
       };
     } catch (e) {
@@ -17472,13 +17450,14 @@ var OpenCodeAdapter = class extends AgentAdapter {
   }
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
-    if (availability.transport === "acp") {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
-      } catch {
-      }
+    if (availability.transport !== "acp") {
+      return { output: "", error: availability.reason ?? "opencode ACP unavailable", exitCode: 1, structured: null, transport: "acp" };
     }
-    return this._invokeNative({ prompt, model, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+    } catch (e) {
+      return { output: "", error: `opencode ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: "acp" };
+    }
   }
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode }) {
     const client = new AcpClient({
@@ -17502,35 +17481,6 @@ var OpenCodeAdapter = class extends AgentAdapter {
     } finally {
       await client.teardown();
     }
-  }
-  async _invokeNative({ prompt, model, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ["run", prompt, "--dangerously-skip-permissions"];
-      if (model) args.splice(1, 0, "--model", model);
-      const proc = spawn4("opencode", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-      const timer = timeout ? setTimeout(() => {
-        proc.kill("SIGTERM");
-      }, timeout) : null;
-      proc.stdout.on("data", (d) => out.push(d));
-      proc.stderr.on("data", (d) => err.push(d));
-      proc.on("close", (code) => {
-        if (timer) clearTimeout(timer);
-        const raw = Buffer.concat(out).toString();
-        const output = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").split("\n").filter((l) => l.trim()).join("\n").trim();
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: "native" });
-      });
-      proc.on("error", (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: "", error: e.message, exitCode: 1, transport: "native" });
-      });
-    });
   }
 };
 
@@ -17581,17 +17531,19 @@ function printMissingWarning(missing) {
 function stripFlags(args) {
   const result = [];
   let skipNext = false;
+  const booleanFlags = /* @__PURE__ */ new Set(["--background", "--wait", "--json"]);
+  const valueFlags = /* @__PURE__ */ new Set(["--agent", "--model", "--effort", "--mode", "--sandbox"]);
   for (const a of args) {
     if (skipNext) {
       skipNext = false;
       continue;
     }
-    if (a === "--background" || a === "--wait" || a === "--json") continue;
-    if (a === "--agent") {
+    if (booleanFlags.has(a)) continue;
+    if (valueFlags.has(a)) {
       skipNext = true;
       continue;
     }
-    if (a.startsWith("--agent=")) continue;
+    if ([...valueFlags].some((flag) => a.startsWith(`${flag}=`))) continue;
     result.push(a);
   }
   return result;
@@ -17600,7 +17552,7 @@ function runAgent(name, binary, args, parse3 = (s) => s) {
   return new Promise((resolve) => {
     const out = [];
     const err = [];
-    const proc = spawn5(binary, args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
+    const proc = spawn2(binary, args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
     const timer = setTimeout(() => {
       proc.kill("SIGTERM");
       resolve({ name, output: "", error: `agent timed out after ${AGENT_TIMEOUT_MS / 1e3}s`, code: 1 });
@@ -19444,6 +19396,7 @@ ${diff}` }
     ];
     const broker = createBroker();
     await broker.sessionStart(`review-${Date.now()}`);
+    let exitCode = 0;
     try {
       const results = await Promise.all(prompts.map(async (p) => {
         try {
@@ -19453,10 +19406,12 @@ ${diff}` }
           return { name: p.name, output: "", error: err.message, code: 1 };
         }
       }));
+      exitCode = results.some((r) => r.code !== 0) ? 1 : 0;
       jsonMode ? printJSON("review", results) : printDelimited(results);
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
   if (cmd === "debug") {
     const jsonMode = rest.includes("--json");
@@ -19475,13 +19430,15 @@ Focus area: ${focus}.
 Format: numbered list, most likely first, one sentence per hypothesis.
 
 Symptom: ${symptom}`;
-    const prompts = [
-      { name: "claude", prompt: makePrompt("application logic, state management, data flow") },
-      { name: "codex", prompt: makePrompt("edge cases in input handling, off-by-one errors, type coercion") },
-      { name: "opencode", prompt: makePrompt("infrastructure, concurrency, external dependencies, environment") }
-    ];
+    const focusByAgent = {
+      claude: "application logic, state management, data flow",
+      codex: "edge cases in input handling, off-by-one errors, type coercion",
+      opencode: "infrastructure, concurrency, external dependencies, environment"
+    };
+    const prompts = availableAgents.map((name) => ({ name, prompt: makePrompt(focusByAgent[name] ?? "general debugging") }));
     const broker = createBroker();
     await broker.sessionStart(`debug-${Date.now()}`);
+    let exitCode = 0;
     try {
       const results = await Promise.all(prompts.map(async (p) => {
         try {
@@ -19491,10 +19448,12 @@ Symptom: ${symptom}`;
           return { name: p.name, output: "", error: err.message, code: 1 };
         }
       }));
+      exitCode = results.some((r) => r.code !== 0) ? 1 : 0;
       jsonMode ? printJSON("debug", results) : printDelimited(results);
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
   if (cmd === "second-opinion") {
     const jsonMode = rest.includes("--json");
@@ -19529,9 +19488,11 @@ ${task}`;
     }
     const broker = createBroker();
     await broker.sessionStart(`second-opinion-${Date.now()}`);
+    let exitCode = 0;
     try {
       const r = await broker.invoke({ agentName: chosenAgent, prompt, timeout: 5 * 6e4 });
       const result = { name: chosenAgent, output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+      exitCode = result.code;
       if (jsonMode) {
         printJSON("second-opinion", [result]);
       } else {
@@ -19549,6 +19510,7 @@ ${"\u2550".repeat(60)}`);
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
   if (cmd === "vote") {
     const jsonMode = rest.includes("--json");
@@ -19622,6 +19584,7 @@ ${"\u2550".repeat(60)}`);
     } finally {
       await broker.shutdown();
     }
+    process.exit(0);
   }
   if (cmd === "goals") {
     const initFlag = rest.includes("--init");

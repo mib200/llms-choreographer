@@ -15,7 +15,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { ClientSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
+import { ClientSideConnection, PROTOCOL_VERSION, ndJsonStream } from '@agentclientprotocol/sdk';
 import { buildAgentEnv } from '../env.mjs';
 
 /**
@@ -149,6 +149,7 @@ export class AcpClient {
     this.connection = null;
     this.proc = null;
     this.sessionId = null;
+    this.outputChunks = [];
   }
 
   /**
@@ -166,16 +167,19 @@ export class AcpClient {
       makeClientHandler({
         interactive: this.interactive,
         permissionAllowlist: this.permissionAllowlist,
-        onUpdate: this.onUpdate,
+        onUpdate: (notification) => {
+          this.recordUpdate(notification);
+          this.onUpdate?.(notification);
+        },
       }),
       stream,
     );
 
     const initResponse = await this.connection.initialize({
-      protocolVersion: '2025-06-12',
+      protocolVersion: PROTOCOL_VERSION,
       clientInfo: { name: 'choreographer', version: '1.0.0' },
-      capabilities: opts.capabilities ?? {
-        fs: { readTextFile: true, writeTextFile: true },
+      clientCapabilities: opts.capabilities ?? {
+        fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
       },
     });
@@ -199,6 +203,7 @@ export class AcpClient {
   async newSession(params = {}) {
     const response = await this.connection.newSession({
       cwd: process.cwd(),
+      mcpServers: [],
       ...params,
     });
     this.sessionId = response.sessionId;
@@ -212,7 +217,7 @@ export class AcpClient {
    * @returns {Promise<void>}
    */
   async resumeSession(sessionId) {
-    await this.connection.resumeSession({ sessionId });
+    await this.connection.loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] });
     this.sessionId = sessionId;
   }
 
@@ -229,11 +234,11 @@ export class AcpClient {
     if (!this.connection) throw new Error('not initialized');
     if (!this.sessionId) throw new Error('no active session');
 
-    const messages = [{ role: 'user', content: [{ type: 'text', text: prompt }] }];
+    this.outputChunks = [];
 
     const promptPromise = this.connection.prompt({
       sessionId: this.sessionId,
-      messages,
+      prompt: [{ type: 'text', text: prompt }],
     });
 
     let response;
@@ -249,13 +254,10 @@ export class AcpClient {
       response = await promptPromise;
     }
 
-    // Extract text from the response
-    let output = '';
-    if (response.output) {
+    let output = this.outputChunks.join('');
+    if (!output && response.output) {
       for (const block of response.output) {
-        if (block.type === 'text') {
-          output += block.text;
-        }
+        if (block.type === 'text') output += block.text;
       }
     }
 
@@ -294,15 +296,48 @@ export class AcpClient {
     }
   }
 
+  recordUpdate(notification) {
+    const update = notification?.update;
+    if (update?.sessionUpdate !== 'agent_message_chunk') return;
+    const content = update.content;
+    if (content?.type === 'text') this.outputChunks.push(content.text);
+  }
+
   /**
    * Tear down the connection and kill the subprocess.
    */
   async teardown() {
     await this.closeSession();
     if (this.proc) {
-      this.proc.kill('SIGTERM');
+      const proc = this.proc;
       this.proc = null;
+      await terminateProcess(proc);
     }
     this.connection = null;
   }
+}
+
+function terminateProcess(proc) {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      finish();
+    }, 1000);
+    timer.unref?.();
+    proc.once('close', () => {
+      clearTimeout(timer);
+      finish();
+    });
+    proc.stdin?.destroy();
+    proc.stdout?.destroy();
+    proc.stderr?.destroy();
+    proc.kill('SIGTERM');
+  });
 }

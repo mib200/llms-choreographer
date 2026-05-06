@@ -61,11 +61,13 @@ export function printMissingWarning(missing) {
 export function stripFlags(args) {
   const result = [];
   let skipNext = false;
+  const booleanFlags = new Set(['--background', '--wait', '--json']);
+  const valueFlags = new Set(['--agent', '--model', '--effort', '--mode', '--sandbox']);
   for (const a of args) {
     if (skipNext) { skipNext = false; continue; }
-    if (a === '--background' || a === '--wait' || a === '--json') continue;
-    if (a === '--agent') { skipNext = true; continue; }
-    if (a.startsWith('--agent=')) continue;
+    if (booleanFlags.has(a)) continue;
+    if (valueFlags.has(a)) { skipNext = true; continue; }
+    if ([...valueFlags].some(flag => a.startsWith(`${flag}=`))) continue;
     result.push(a);
   }
   return result;

@@ -62,6 +62,30 @@ test('buildAgentEnv CHOREO_AGENT_ENV_PASSTHROUGH absent blocks secrets', () => {
   assert.equal(env.PATH, '/usr/bin');
 });
 
+test('buildAgentEnv CHOREO_AGENT_ENV_ALLOW forwards only requested exact keys', () => {
+  const src = {
+    PATH: '/usr/bin',
+    CHOREO_AGENT_ENV_ALLOW: 'AWS_PROFILE,GOOGLE_APPLICATION_CREDENTIALS bad-key',
+    AWS_PROFILE: 'prod',
+    GOOGLE_APPLICATION_CREDENTIALS: '/tmp/adc.json',
+    AWS_SECRET_ACCESS_KEY: 'secret',
+  };
+  const env = buildAgentEnv(src);
+  assert.equal(env.AWS_PROFILE, 'prod');
+  assert.equal(env.GOOGLE_APPLICATION_CREDENTIALS, '/tmp/adc.json');
+  assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
+});
+
+test('production adapters do not contain native unsafe permission bypasses', async () => {
+  const fs = await import('node:fs');
+  for (const file of ['../agents/claude.mjs', '../agents/codex.mjs', '../agents/opencode.mjs']) {
+    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.ok(!source.includes('dangerously-skip-permissions'), `${file} must not bypass permissions`);
+    assert.ok(!source.includes('_invokeNative'), `${file} must not keep native fallback path`);
+    assert.ok(!source.includes('fall through to native'), `${file} must not silently fallback from ACP`);
+  }
+});
+
 // --- Permission handler ---
 
 test('makeClientHandler permission: denies unlisted tools', async () => {

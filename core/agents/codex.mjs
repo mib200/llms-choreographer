@@ -2,15 +2,12 @@
  * Codex agent adapter — ACP stdio via Zed's codex-acp adapter.
  *
  * Primary: ACP stdio via `codex` binary with ACP stdio transport
- * Fallback: `codex app-server` JSON-RPC over Unix socket
- *
- * Note: No auto-fallback to app-server for schema enforcement.
+ * No native/app-server fallback: production invocations must stay inside ACP.
  * Council mandate: uniform client-side validation for all agents.
  */
 
 import { AgentAdapter } from './base.mjs';
-import { AcpClient, parseStructured } from './acp-client.mjs';
-import { spawn } from 'node:child_process';
+import { AcpClient } from './acp-client.mjs';
 import { buildAgentEnv } from '../env.mjs';
 
 export class CodexAdapter extends AgentAdapter {
@@ -45,13 +42,14 @@ export class CodexAdapter extends AgentAdapter {
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
 
-    if (availability.transport === 'acp') {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
-      } catch { /* ACP failed — fall through to native */ }
+    if (availability.transport !== 'acp') {
+      return { output: '', error: availability.reason ?? 'codex ACP unavailable', exitCode: 1, structured: null, transport: 'acp' };
     }
-
-    return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+    } catch (e) {
+      return { output: '', error: `codex ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: 'acp' };
+    }
   }
 
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId }) {
@@ -77,34 +75,4 @@ export class CodexAdapter extends AgentAdapter {
     }
   }
 
-  async _invokeNative({ prompt, model, effort, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ['exec', prompt];
-      if (model) args.splice(0, 0, '--model', model);
-      if (effort) args.splice(0, 0, '--effort', effort);
-
-      const proc = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-
-      const timer = timeout ? setTimeout(() => { proc.kill('SIGTERM'); }, timeout) : null;
-
-      proc.stdout.on('data', (d) => out.push(d));
-      proc.stderr.on('data', (d) => err.push(d));
-      proc.on('close', (code) => {
-        if (timer) clearTimeout(timer);
-        const output = Buffer.concat(out).toString().trim();
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: 'native' });
-      });
-      proc.on('error', (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: '', error: e.message, exitCode: 1, transport: 'native' });
-      });
-    });
-  }
 }

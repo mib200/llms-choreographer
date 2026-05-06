@@ -278,11 +278,12 @@ Fixed all 28 ce-code-review findings (3 P0, 6 P1, 4 P2) from the Ships 1-5 full 
 
 **Architecture changes:**
 - Extracted `buildAgentEnv` to `core/env.mjs` to break runners↔adapters circular import
-- Added ACP-to-native fallback in all adapters (try/catch in `invoke()`)
+- Removed ACP-to-native fallback in all adapters; production invocations fail closed on ACP errors
 - Removed `runAgent` from production paths (kept in runners.mjs for backward compat export)
 
-**Tests:** 164 pass (was 123), 8 new test files:
+**Tests:** 172 pass (was 123), 9 new test files:
 - `adapter-env.test.mjs` — env scrub verification
+- `acp-client.test.mjs` — installed SDK request-shape integration
 - `broker-wiring.test.mjs` — production path flows through broker
 - `broker-events.test.mjs` — BufferedEventEmitter
 - `verifier-loop-run.test.mjs` — full verifier loop e2e
@@ -292,7 +293,7 @@ Fixed all 28 ce-code-review findings (3 P0, 6 P1, 4 P2) from the Ships 1-5 full 
 - `git.test.mjs` — scope detection
 
 ### Verification
-- `npm test`: 164/164 pass, 0 fail
+- `npm test`: 172/172 pass, 0 fail
 - `npm run check-bundles`: green
 - Regression greps: 0 unsafe spawns, 0 direct runAgent in production, 0 permission auto-allow
 
@@ -303,10 +304,8 @@ Fixed all 28 ce-code-review findings (3 P0, 6 P1, 4 P2) from the Ships 1-5 full 
 - Council decision: `debates/council/code-review-plan-implementation-6aaecd/decision.md`
 
 ### Remaining deferred items
-- Ship 1 residuals (F8, NFF1) — per plan directive
 - Legacy parser retirement — kept for backward compat
 - Gemini adapter — deferred per user lock
-- Socket chmod 0600 (SEC-003) — noted, not blocking
 
 ---
 

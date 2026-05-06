@@ -275,6 +275,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const broker = createBroker();
     await broker.sessionStart(`review-${Date.now()}`);
+    let exitCode = 0;
     try {
       const results = await Promise.all(prompts.map(async (p) => {
         try {
@@ -284,10 +285,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           return { name: p.name, output: '', error: err.message, code: 1 };
         }
       }));
+      exitCode = results.some(r => r.code !== 0) ? 1 : 0;
       jsonMode ? printJSON('review', results) : printDelimited(results);
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
 
   // ── debug ────────────────────────────────────────────────────────────────────
@@ -309,14 +312,16 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `Format: numbered list, most likely first, one sentence per hypothesis.\n\n` +
       `Symptom: ${symptom}`;
 
-    const prompts = [
-      { name: 'claude', prompt: makePrompt('application logic, state management, data flow') },
-      { name: 'codex', prompt: makePrompt('edge cases in input handling, off-by-one errors, type coercion') },
-      { name: 'opencode', prompt: makePrompt('infrastructure, concurrency, external dependencies, environment') },
-    ];
+    const focusByAgent = {
+      claude: 'application logic, state management, data flow',
+      codex: 'edge cases in input handling, off-by-one errors, type coercion',
+      opencode: 'infrastructure, concurrency, external dependencies, environment',
+    };
+    const prompts = availableAgents.map(name => ({ name, prompt: makePrompt(focusByAgent[name] ?? 'general debugging') }));
 
     const broker = createBroker();
     await broker.sessionStart(`debug-${Date.now()}`);
+    let exitCode = 0;
     try {
       const results = await Promise.all(prompts.map(async (p) => {
         try {
@@ -326,10 +331,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
           return { name: p.name, output: '', error: err.message, code: 1 };
         }
       }));
+      exitCode = results.some(r => r.code !== 0) ? 1 : 0;
       jsonMode ? printJSON('debug', results) : printDelimited(results);
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
 
   // ── second-opinion ───────────────────────────────────────────────────────────
@@ -373,9 +380,11 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     const broker = createBroker();
     await broker.sessionStart(`second-opinion-${Date.now()}`);
+    let exitCode = 0;
     try {
       const r = await broker.invoke({ agentName: chosenAgent, prompt, timeout: 5 * 60_000 });
       const result = { name: chosenAgent, output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+      exitCode = result.code;
       if (jsonMode) {
         printJSON('second-opinion', [result]);
       } else {
@@ -391,6 +400,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     } finally {
       await broker.shutdown();
     }
+    process.exit(exitCode);
   }
 
   // ── vote ─────────────────────────────────────────────────────────────────────
@@ -466,6 +476,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     } finally {
       await broker.shutdown();
     }
+    process.exit(0);
   }
 
   // ── goals ────────────────────────────────────────────────────────────────────

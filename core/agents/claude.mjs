@@ -2,14 +2,11 @@
  * Claude agent adapter — ACP stdio via @agentclientprotocol/claude-agent-acp.
  *
  * Primary: ACP stdio via `@agentclientprotocol/claude-agent-acp` (wraps Claude CLI)
- * Fallback A: `@anthropic-ai/claude-agent-sdk` programmatic API
- * Fallback B: CLI subprocess `claude --print --output-format stream-json`
+ * No native CLI fallback: production invocations must stay inside ACP.
  */
 
 import { AgentAdapter } from './base.mjs';
-import { AcpClient, parseStructured } from './acp-client.mjs';
-import { spawn } from 'node:child_process';
-import { parseClaudeStreamJson } from '../parsers.mjs';
+import { AcpClient } from './acp-client.mjs';
 import { buildAgentEnv } from '../env.mjs';
 
 export class ClaudeAdapter extends AgentAdapter {
@@ -41,29 +38,20 @@ export class ClaudeAdapter extends AgentAdapter {
       }
     } catch { /* fall through */ }
 
-    // Fallback: check if claude CLI is available
-    try {
-      const { spawnSync } = await import('node:child_process');
-      const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 5000, env: buildAgentEnv() });
-      if (r.status === 0) {
-        return { available: true, transport: 'native', reason: 'ACP stdio unavailable, using CLI fallback' };
-      }
-      return { available: false, reason: 'claude CLI not found', setupCommand: '/choreo:claude' };
-    } catch (e) {
-      return { available: false, reason: e.message, setupCommand: '/choreo:claude' };
-    }
+    return { available: false, reason: 'claude ACP stdio unavailable', setupCommand: '/choreo:claude' };
   }
 
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
 
-    if (availability.transport === 'acp') {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
-      } catch { /* ACP failed — fall through to native */ }
+    if (availability.transport !== 'acp') {
+      return { output: '', error: availability.reason ?? 'claude ACP unavailable', exitCode: 1, structured: null, transport: 'acp' };
     }
-
-    return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+    } catch (e) {
+      return { output: '', error: `claude ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: 'acp' };
+    }
   }
 
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode }) {
@@ -91,34 +79,4 @@ export class ClaudeAdapter extends AgentAdapter {
     }
   }
 
-  async _invokeNative({ prompt, model, effort, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'];
-      if (model) args.splice(0, 0, '--model', model);
-
-      const proc = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-
-      const timer = timeout ? setTimeout(() => { proc.kill('SIGTERM'); }, timeout) : null;
-
-      proc.stdout.on('data', (d) => out.push(d));
-      proc.stderr.on('data', (d) => err.push(d));
-      proc.on('close', (code) => {
-        if (timer) clearTimeout(timer);
-        const raw = Buffer.concat(out).toString();
-        const output = parseClaudeStreamJson(raw);
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: 'native' });
-      });
-      proc.on('error', (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: '', error: e.message, exitCode: 1, transport: 'native' });
-      });
-    });
-  }
 }

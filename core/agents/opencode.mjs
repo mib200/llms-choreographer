@@ -2,15 +2,14 @@
  * OpenCode agent adapter — ACP stdio primary.
  *
  * Primary: `opencode` binary with ACP stdio (native support)
- * Fallback: `opencode serve` HTTP API + SSE (invoked only when ACP stdio unavailable)
+ * No native/HTTP fallback: production invocations must stay inside ACP.
  *
  * Availability probe fails loud: "opencode ACP stdio unavailable.
  * Start HTTP fallback with: opencode serve &"
  */
 
 import { AgentAdapter } from './base.mjs';
-import { AcpClient, parseStructured } from './acp-client.mjs';
-import { spawn } from 'node:child_process';
+import { AcpClient } from './acp-client.mjs';
 import { buildAgentEnv } from '../env.mjs';
 
 export class OpenCodeAdapter extends AgentAdapter {
@@ -37,7 +36,7 @@ export class OpenCodeAdapter extends AgentAdapter {
       }
       return {
         available: false,
-        reason: 'opencode ACP stdio unavailable. Start HTTP fallback with: opencode serve &',
+        reason: 'opencode ACP stdio unavailable',
         setupCommand: '/choreo:opencode',
       };
     } catch (e) {
@@ -52,13 +51,14 @@ export class OpenCodeAdapter extends AgentAdapter {
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
 
-    if (availability.transport === 'acp') {
-      try {
-        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
-      } catch { /* ACP failed — fall through to native */ }
+    if (availability.transport !== 'acp') {
+      return { output: '', error: availability.reason ?? 'opencode ACP unavailable', exitCode: 1, structured: null, transport: 'acp' };
     }
-
-    return this._invokeNative({ prompt, model, structuredSchema, timeout });
+    try {
+      return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+    } catch (e) {
+      return { output: '', error: `opencode ACP invocation failed: ${e.message}`, exitCode: 1, structured: null, transport: 'acp' };
+    }
   }
 
   async _invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode }) {
@@ -86,40 +86,4 @@ export class OpenCodeAdapter extends AgentAdapter {
     }
   }
 
-  async _invokeNative({ prompt, model, structuredSchema, timeout }) {
-    return new Promise((resolve) => {
-      const args = ['run', prompt, '--dangerously-skip-permissions'];
-      if (model) args.splice(1, 0, '--model', model);
-
-      const proc = spawn('opencode', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
-      const out = [];
-      const err = [];
-
-      const timer = timeout ? setTimeout(() => { proc.kill('SIGTERM'); }, timeout) : null;
-
-      proc.stdout.on('data', (d) => out.push(d));
-      proc.stderr.on('data', (d) => err.push(d));
-      proc.on('close', (code) => {
-        if (timer) clearTimeout(timer);
-        const raw = Buffer.concat(out).toString();
-        // Strip ANSI codes and progress lines
-        const output = raw
-          .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-          .split('\n')
-          .filter((l) => l.trim())
-          .join('\n')
-          .trim();
-        let structured = null;
-        if (structuredSchema) {
-          const { parsed, valid } = parseStructured(output, structuredSchema);
-          if (valid) structured = parsed;
-        }
-        resolve({ output, error: Buffer.concat(err).toString().trim(), exitCode: code ?? 1, structured, transport: 'native' });
-      });
-      proc.on('error', (e) => {
-        if (timer) clearTimeout(timer);
-        resolve({ output: '', error: e.message, exitCode: 1, transport: 'native' });
-      });
-    });
-  }
 }

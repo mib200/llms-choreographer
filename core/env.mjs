@@ -13,7 +13,8 @@ const ENV_ALLOW_EXACT = new Set([
   'ANTHROPIC_VERTEX_PROJECT_ID',
   'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX',
   'OPENAI_API_KEY', 'OPENAI_BASE_URL',
-  'CHOREO_LOG_DIR', 'CHOREO_LOG_MAX_BYTES', 'CHOREO_AGENT_ENV_PASSTHROUGH',
+  'CHOREO_LOG_DIR', 'CHOREO_LOG_MAX_BYTES',
+  'CHOREO_AGENT_ENV_ALLOW', 'CHOREO_AGENT_ENV_PASSTHROUGH',
 ]);
 
 const ENV_ALLOW_PREFIXES = [
@@ -23,11 +24,22 @@ const ENV_ALLOW_PREFIXES = [
 
 export function buildAgentEnv(src = process.env) {
   if (src.CHOREO_AGENT_ENV_PASSTHROUGH === '1') return { ...src };
+  const extraAllow = parseExtraAllowlist(src.CHOREO_AGENT_ENV_ALLOW);
   const out = Object.create(null);
   for (const [key, value] of Object.entries(src)) {
-    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some(p => key.startsWith(p))) {
+    if (ENV_ALLOW_EXACT.has(key) || extraAllow.has(key) || ENV_ALLOW_PREFIXES.some(p => key.startsWith(p))) {
       out[key] = value;
     }
   }
   return out;
+}
+
+function parseExtraAllowlist(value) {
+  const allowed = new Set();
+  if (!value) return allowed;
+  for (const raw of String(value).split(/[,\s:]+/)) {
+    const key = raw.trim();
+    if (/^[A-Z_][A-Z0-9_]*$/.test(key)) allowed.add(key);
+  }
+  return allowed;
 }
