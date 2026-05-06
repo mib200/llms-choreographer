@@ -12,7 +12,22 @@ How each agent delegates to every other agent via the `choreo` plugin.
 | **Codex** | `choreo-claude` skill | `choreo-codex` skill | `choreo-opencode` skill |
 | **OpenCode** | `/choreo-claude <task>` | `/choreo-codex <task>` | `/choreo-opencode <task>` |
 
-All routes go through `companion.mjs council` which runs available agents in parallel and returns results.
+All routes go through `companion.mjs` which dispatches to the appropriate command. Agent dispatch uses ACP adapters when `--transport=acp` is set, otherwise falls back to subprocess invocation.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `agent --name=<agent> <task>` | Single-agent dispatch (claude, codex, opencode) |
+| `council <task>` | Multi-agent council deliberation (6-phase state machine) |
+| `adversarial-review [focus]` | Adversarial review of current branch/working tree |
+| `verify` | Trigger verifier loop (requires `.choreographer/verifiers.yaml`) |
+| `goals [--init --plan=<path>]` | Goal-definition assistant for verifier setup |
+| `review` | Parallel review of working tree changes |
+| `debug <symptom>` | Parallel debug hypothesis generation |
+| `second-opinion [--agent=<agent>] <decision>` | Single-agent second opinion |
+| `vote <proposition>` | Multi-agent vote tally |
+| `check-all` | Check all agent installations |
 
 ## Code Snippets
 

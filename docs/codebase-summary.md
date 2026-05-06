@@ -4,11 +4,11 @@
 
 ## Overview
 
-Monorepo with one shared core library bundled into three runtime-specific plugins (Claude Code, Codex, OpenCode) via esbuild. One marketplace name (`mib200`), one plugin name (`choreo`), one namespace (`/choreo:*` for Claude/Codex, `/choreo-*` for OpenCode).
+Monorepo with one shared core library bundled into three runtime-specific plugins (Claude Code, Codex, OpenCode) via esbuild. ACP-first architecture with broker daemon, council deliberation, adversarial review, and verifier loop.
 
 **Package:** `@mib200/choreographer-monorepo` v1.0.0  
 **Runtime:** Node ≥ 22  
-**Agents:** Claude Code, Codex, OpenCode
+**Agents:** Claude Code, Codex, OpenCode (Gemini deferred to post-Ship-5)
 
 ## Directory Inventory
 
@@ -16,10 +16,20 @@ Monorepo with one shared core library bundled into three runtime-specific plugin
 
 | File | Purpose |
 |------|---------|
-| `companion.mjs` | CLI dispatcher (check-all, council, review, debug, second-opinion, vote) + re-exports from parsers + runners |
-| `parsers.mjs` | `parseClaudeStreamJson`, `parseOpenCodeOutput` |
-| `runners.mjs` | `REGISTRY`, `checkCli`, `filterAvailable`, `printMissingWarning`, `requireAvailable`, `runAgent`, `printDelimited`, `printJSON`, `stripFlags` |
-| `tests/` | 7 test files + `helpers/fake-agents.mjs` — 32 assertions |
+| `companion.mjs` | CLI dispatcher (check-all, agent, council, review, debug, second-opinion, vote, verify, goals, adversarial-review) |
+| `parsers.mjs` | `parseStructuredOutput(raw, schema)` — client-side JSON validation for ACP |
+| `runners.mjs` | `REGISTRY` (with `adapter` key), `runAgent`, `checkCli`, `checkAgent`, `requireAvailable` |
+| `observability.mjs` | NDJSON event emitter — 7-day retention, 100MB/day cap |
+| `council.mjs` | 6-phase state machine: Frame → Clarifications → Openings → Rebuttals → Synthesis → Render |
+| `git.mjs` | Git context collection for adversarial review (working-tree + branch modes) |
+| `review-render.mjs` | Renders structured review JSON into markdown |
+| `goal-assistant.mjs` | 3-phase goal-definition interview for verifier setup |
+| `agents/` | ACP adapters: `base.mjs`, `acp-client.mjs`, `claude.mjs`, `codex.mjs`, `opencode.mjs` |
+| `runtime/` | Broker daemon: `broker.mjs`, `endpoint.mjs`, `lifecycle.mjs` |
+| `verifier/` | Verifier loop: `loop.mjs`, `sanitizer.mjs`, `composer.mjs` |
+| `schemas/` | JSON schemas: council-position, council-synthesis, verifier-report, goals, review-output |
+| `prompts/` | Prompt templates: adversarial-review.md |
+| `tests/` | Test suite — agent, council, verifier, parser, observability tests |
 
 ### `plugin-claude/` — Claude Code plugin
 

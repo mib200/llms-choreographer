@@ -10,6 +10,10 @@ import { emit } from './observability.mjs';
 import { runCouncil } from './council.mjs';
 import { runGoalAssistant, initGoalsFromPlan } from './goal-assistant.mjs';
 import { loadVerifierConfig, runVerifierLoop, checkPendingFeedback } from './verifier/loop.mjs';
+import { resolveReviewTarget, collectReviewContext } from './git.mjs';
+import { renderReviewResult } from './review-render.mjs';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 
 // Build a privacy-preserving description of the user's task for structured logs.
 // NDJSON is written to `~/.choreo/logs/` with 7-day retention — raw prompts can
@@ -600,6 +604,83 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 
     if (jsonMode) {
       console.log(JSON.stringify({ command: 'verify', verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+    }
+    process.exit(0);
+  }
+
+  // ── adversarial-review ───────────────────────────────────────────────────────
+
+  if (cmd === 'adversarial-review') {
+    const jsonMode = rest.includes('--json');
+    const scopeFlag = rest.find((a) => a.startsWith('--scope='))?.split('=')[1];
+    const baseFlag = rest.find((a) => a.startsWith('--base='))?.split('=')[1];
+    const focusTokens = rest.filter((a) => !a.startsWith('--') && !['--json'].includes(a));
+    const userFocus = focusTokens.join(' ') || 'general code review';
+
+    const options = { scope: scopeFlag, base: baseFlag };
+    const target = resolveReviewTarget(process.cwd(), options);
+    const context = collectReviewContext(process.cwd(), target, {
+      maxInlineFiles: 2,
+      maxInlineDiffBytes: 256 * 1024,
+    });
+
+    // Load adversarial review prompt template
+    const promptTemplate = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'prompts', 'adversarial-review.md'),
+      'utf8'
+    );
+
+    // Load review output schema
+    const reviewSchema = JSON.parse(
+      readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), 'schemas', 'review-output.schema.json'),
+        'utf8'
+      )
+    );
+
+    // Interpolate prompt template
+    const prompt = promptTemplate
+      .replace('{{TARGET_LABEL}}', context.summary)
+      .replace('{{USER_FOCUS}}', userFocus)
+      .replace('{{REVIEW_COLLECTION_GUIDANCE}}', context.collectionGuidance)
+      .replace('{{REVIEW_INPUT}}', context.content);
+
+    // Dispatch to Codex adapter with structured output
+    const codexEntry = REGISTRY.codex;
+    if (!codexEntry) {
+      console.error('[adversarial-review] Codex agent not available.');
+      process.exit(1);
+    }
+
+    try {
+      emit({
+        type: 'adversarial_review',
+        target: context.summary,
+        scope: target.mode,
+        file_count: context.fileCount,
+        diff_bytes: context.diffBytes,
+      });
+    } catch { /* observability must never block */ }
+
+    // Use adapter if available and --transport=acp, otherwise legacy
+    const result = await runAgent('codex', codexEntry.binary, ['exec', prompt], (raw) => {
+      try {
+        const parsed = parseStructuredOutput(raw, reviewSchema);
+        return { parsed, rawOutput: raw };
+      } catch (err) {
+        return { parsed: null, parseError: err.message, rawOutput: raw };
+      }
+    });
+
+    const rendered = renderReviewResult(result, {
+      targetLabel: context.summary,
+      reviewLabel: 'Adversarial Review',
+    });
+
+    if (jsonMode) {
+      console.log(JSON.stringify({ command: 'adversarial-review', target: context.summary, verdict: result.parsed?.verdict, findings: result.parsed?.findings || [] }));
+    } else {
+      console.log(rendered);
     }
     process.exit(0);
   }

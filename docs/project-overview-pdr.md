@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-Choreographer is a monorepo providing multi-agent delegation between Claude Code, Codex, and OpenCode. It installs as a native plugin/skill set into each runtime and enables council reviews, second opinions, parallel debugging, and voting — all without leaving the current interface.
+Choreographer is a monorepo providing multi-agent delegation between Claude Code, Codex, and OpenCode. It installs as a native plugin/skill set into each runtime and enables ACP-first agent dispatch, council deliberation, adversarial review, verifier loops, second opinions, and voting — all without leaving the current interface.
 
 **Namespace:** `/choreo:*` (Claude/Codex), `/choreo-*` (OpenCode)
 

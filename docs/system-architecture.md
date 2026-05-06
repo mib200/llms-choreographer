@@ -4,7 +4,7 @@
 
 ## Overview
 
-Choreographer is a build-time monorepo whose runtime artifact is a single self-contained `companion.mjs` file bundled into each plugin. There is no running server or daemon. All delegation happens via subprocess invocation at command time.
+Choreographer is a build-time monorepo whose runtime artifact is a single self-contained `companion.mjs` file bundled into each plugin. The architecture is ACP-first: a broker daemon manages Agent Client Protocol connections to all agents (Claude, Codex, OpenCode), with native subprocess fallbacks. Multi-agent capabilities include council deliberation (6-phase state machine), adversarial review, and a verifier loop for iterative quality gates.
 
 ---
 
