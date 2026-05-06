@@ -243,19 +243,24 @@ export class AcpClient {
 
     let response;
     if (timeout) {
+      let timer;
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
+        timer = setTimeout(() => {
           this.cancel().catch(() => {});
           reject(new Error(`prompt timed out after ${timeout}ms`));
         }, timeout);
       });
-      response = await Promise.race([promptPromise, timeoutPromise]);
+      try {
+        response = await Promise.race([promptPromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timer);
+      }
     } else {
       response = await promptPromise;
     }
 
     let output = this.outputChunks.join('');
-    if (!output && response.output) {
+    if (!output.trim() && response.output) {
       for (const block of response.output) {
         if (block.type === 'text') output += block.text;
       }
