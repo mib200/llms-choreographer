@@ -420,3 +420,5 @@ export function createBroker() {
   broker.registerAdapter('opencode', new OpenCodeAdapter());
   return broker;
 }
+
+export { CircuitBreaker, LoadQueue, DeadLetterQueue };

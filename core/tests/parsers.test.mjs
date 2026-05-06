@@ -60,13 +60,10 @@ test('parseStructuredOutput: handles JSON with escaped quotes', () => {
   assert.equal(result.findings[0].msg, 'say "hello"');
 });
 
-test('parseStructuredOutput: handles multiple JSON blocks (finds first valid)', () => {
+test('parseStructuredOutput: stops after first JSON candidate (known limitation)', () => {
   const raw = '{"invalid": true} {"verdict": "approve", "findings": []}';
-  // First block fails schema validation, second should be found
   const result = parseStructuredOutput(raw, TEST_SCHEMA);
-  // The first {} is parsed but fails required check → returns null from inner try
-  // Then the second {} should be found
-  assert.equal(result, null); // First block invalid, second not reached due to break
+  assert.equal(result, null);
 });
 
 test('parseStructuredOutput: handles JSON with braces in strings', () => {

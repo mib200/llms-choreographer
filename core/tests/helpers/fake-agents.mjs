@@ -62,7 +62,7 @@ export function createFakeAgents(names, { unavailable = [], script, tmpBase } = 
  * allowlist tests inject both secrets (should be scrubbed) and opt-in vars.
  */
 export function runCompanion(args, { path, logDir, extraEnv } = {}) {
-  const env = { ...process.env, PATH: `${path}:${process.env.PATH}` };
+  const env = { ...process.env, PATH: `${path}:${process.env.PATH}`, CHOREO_TEST_MODE: '1' };
   if (logDir) env.CHOREO_LOG_DIR = logDir;
   if (extraEnv) Object.assign(env, extraEnv);
   const result = spawnSync(

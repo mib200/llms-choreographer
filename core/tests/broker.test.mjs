@@ -1,51 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-
-// Import the internal classes from broker.mjs by re-implementing them here
-// (they're not exported, so we test via the public API or recreate them)
-
-// Recreate for isolated testing
-class CircuitBreaker {
-  constructor({ failureThreshold = 5, recoveryTimeoutMs = 60000 } = {}) {
-    this.failureThreshold = failureThreshold;
-    this.recoveryTimeoutMs = recoveryTimeoutMs;
-    this.failures = 0;
-    this.lastFailureTime = 0;
-    this.state = 'closed';
-  }
-
-  recordSuccess() {
-    this.failures = 0;
-    this.state = 'closed';
-  }
-
-  recordFailure() {
-    this.failures++;
-    this.lastFailureTime = Date.now();
-    if (this.state === 'half-open') {
-      this.state = 'open';
-    } else if (this.failures >= this.failureThreshold) {
-      this.state = 'open';
-    }
-  }
-
-  canExecute() {
-    if (this.state === 'closed') return true;
-    if (this.state === 'open') {
-      if (Date.now() - this.lastFailureTime >= this.recoveryTimeoutMs) {
-        this.state = 'half-open';
-        return true;
-      }
-      return false;
-    }
-    return true;
-  }
-
-  trip() {
-    this.state = 'open';
-    this.lastFailureTime = Date.now();
-  }
-}
+import { CircuitBreaker, LoadQueue, DeadLetterQueue } from '../runtime/broker.mjs';
 
 test('CircuitBreaker: closed allows execution', () => {
   const cb = new CircuitBreaker();
@@ -128,37 +83,6 @@ test('CircuitBreaker: success resets failure count in closed state', () => {
 
 // ── LoadQueue tests ──────────────────────────────────────────────────────────
 
-class LoadQueue {
-  constructor() {
-    this.queue = [];
-    this.processing = false;
-  }
-
-  async enqueue(fn) {
-    return new Promise((resolve, reject) => {
-      this.queue.push({ fn, resolve, reject });
-      this._processNext();
-    });
-  }
-
-  async _processNext() {
-    if (this.processing || this.queue.length === 0) return;
-    this.processing = true;
-    const { fn, resolve, reject } = this.queue.shift();
-    try {
-      const result = await fn();
-      resolve(result);
-    } catch (err) {
-      reject(err);
-    } finally {
-      this.processing = false;
-      this._processNext();
-    }
-  }
-
-  get depth() { return this.queue.length; }
-}
-
 test('LoadQueue: processes items sequentially', async () => {
   const q = new LoadQueue();
   const results = [];
@@ -195,28 +119,6 @@ test('LoadQueue: propagates errors without blocking queue', async () => {
 });
 
 // ── DeadLetterQueue tests ────────────────────────────────────────────────────
-
-class DeadLetterQueue {
-  constructor(maxSize = 100) {
-    this.maxSize = maxSize;
-    this.messages = [];
-  }
-
-  enqueue(message) {
-    this.messages.push({ ...message, enqueuedAt: Date.now() });
-    if (this.messages.length > this.maxSize) {
-      this.messages.shift();
-    }
-  }
-
-  drain() {
-    const msgs = [...this.messages];
-    this.messages = [];
-    return msgs;
-  }
-
-  get size() { return this.messages.length; }
-}
 
 test('DLQ: enqueues and drains messages', () => {
   const dlq = new DeadLetterQueue();
