@@ -46,10 +46,64 @@ test('AcpClient speaks installed ACP SDK request shapes', async () => {
   }
 });
 
-function fakeAgentSource(logPath) {
+test('AcpClient falls back to response output for whitespace-only stream chunks', async () => {
+  const dir = mkdtempSync(join(process.cwd(), '.tmp-acp-client-'));
+  const logPath = join(dir, 'requests.ndjson');
+  const fakeAgentPath = join(dir, 'fake-agent.mjs');
+  writeFileSync(fakeAgentPath, fakeAgentSource(logPath, { mode: 'response-output-fallback' }));
+
+  const client = new AcpClient({
+    binary: process.execPath,
+    acpArgs: [fakeAgentPath],
+    env: { ...process.env, ACP_TEST_LOG: logPath },
+  });
+
+  try {
+    await client.initialize();
+    await client.newSession();
+    const result = await client.prompt({ prompt: 'fallback' });
+
+    assert.equal(result.output, '{"status":"fallback"}');
+  } finally {
+    await client.teardown();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('AcpClient clears prompt timeout after a successful response', async () => {
+  const dir = mkdtempSync(join(process.cwd(), '.tmp-acp-client-'));
+  const logPath = join(dir, 'requests.ndjson');
+  const fakeAgentPath = join(dir, 'fake-agent.mjs');
+  writeFileSync(fakeAgentPath, fakeAgentSource(logPath, { mode: 'fast-with-timeout' }));
+
+  const client = new AcpClient({
+    binary: process.execPath,
+    acpArgs: [fakeAgentPath],
+    env: { ...process.env, ACP_TEST_LOG: logPath },
+  });
+
+  try {
+    await client.initialize();
+    await client.newSession();
+    const result = await client.prompt({ prompt: 'fast', timeout: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    assert.equal(result.output, '{"status":"fast"}');
+
+    const methods = readFileSync(logPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line).method);
+    assert.ok(!methods.includes('cancel'));
+  } finally {
+    await client.teardown();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function fakeAgentSource(logPath, { mode = 'stream-ok' } = {}) {
   return `
 import { AgentSideConnection, PROTOCOL_VERSION, ndJsonStream } from '@agentclientprotocol/sdk';
 import { appendFileSync } from 'node:fs';
+
+const mode = ${JSON.stringify(mode)};
 
 function log(method, params) {
   appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ method, params }) + '\\n');
@@ -89,6 +143,21 @@ class FakeAgent {
 
   async prompt(params) {
     log('prompt', params);
+    if (mode === 'response-output-fallback') {
+      await connection.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: '  \\n  ' },
+        },
+      });
+      return { stopReason: 'end_turn', output: [{ type: 'text', text: '{"status":"fallback"}' }] };
+    }
+
+    if (mode === 'fast-with-timeout') {
+      return { stopReason: 'end_turn', output: [{ type: 'text', text: '{"status":"fast"}' }] };
+    }
+
     await connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {
@@ -99,7 +168,10 @@ class FakeAgent {
     return { stopReason: 'end_turn' };
   }
 
-  async cancel() {}
+  async cancel(params) {
+    log('cancel', params);
+    return {};
+  }
   async closeSession() { return {}; }
   async authenticate() { return {}; }
 }
