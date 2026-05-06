@@ -58,6 +58,8 @@ export function loadVerifierConfig(rootDir) {
       current.description = yamlValue(trimmed).replace(/^["']|["']$/g, '');
     } else if (current && trimmed.startsWith('allowed_script:')) {
       current.allowed_script = yamlValue(trimmed);
+    } else if (current && trimmed.startsWith('model:')) {
+      current.model = yamlValue(trimmed);
     } else if (current && trimmed.startsWith('triggers:')) {
       const val = yamlValue(trimmed);
       current.triggers = val === '[]' ? [] : (val || '').replace(/[\[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean);

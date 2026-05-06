@@ -52,7 +52,7 @@ class CircuitBreaker {
   canExecute() {
     if (this.state === 'closed') return true;
     if (this.state === 'open') {
-      if (Date.now() - this.lastFailureTime > this.recoveryTimeoutMs) {
+      if (Date.now() - this.lastFailureTime >= this.recoveryTimeoutMs) {
         this.state = 'half-open';
         return true;
       }
