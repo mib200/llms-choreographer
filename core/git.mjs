@@ -251,7 +251,7 @@ export function collectReviewContext(cwd, target, options = {}) {
   if (target.mode === 'working-tree') {
     const state = getWorkingTreeState(repoRoot);
     const stagedBytes = measureGitOutputBytes(repoRoot, ['diff', '--cached', '--no-ext-diff', '--submodule=diff'], maxInlineDiffBytes);
-    const unstagedBytes = measureGitOutputBytes(repoRoot, ['diff', '--no-ext-diff', '--submodule=diff'], maxInlineDiffBytes - stagedBytes);
+    const unstagedBytes = measureGitOutputBytes(repoRoot, ['diff', '--no-ext-diff', '--submodule=diff'], Math.max(0, maxInlineDiffBytes - stagedBytes));
     diffBytes = stagedBytes + unstagedBytes;
     includeDiff = options.includeDiff ?? (
       [...state.staged, ...state.unstaged, ...state.untracked].filter(Boolean).length <= maxInlineFiles &&

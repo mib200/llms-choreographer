@@ -60,11 +60,11 @@ function writeCheckpoint(slug, phase, round, members, generation = 1) {
     generation,
     timestamp: Date.now(),
   };
-  writeFileSync(join('debates', 'council', slug, 'council.json'), JSON.stringify(checkpoint, null, 2));
+  writeFileSync(join(process.cwd(), 'debates', 'council', slug, 'council.json'), JSON.stringify(checkpoint, null, 2));
 }
 
 function readCheckpoint(slug) {
-  const path = join('debates', 'council', slug, 'council.json');
+  const path = join(process.cwd(), 'debates', 'council', slug, 'council.json');
   if (existsSync(path)) {
     return JSON.parse(readFileSync(path, 'utf8'));
   }
@@ -148,7 +148,10 @@ async function invokeMember(name, binary, prompt, args = []) {
 
 function getMemberInvocation(name, prompt) {
   const entry = REGISTRY[name];
-  if (!entry) return null;
+  if (!entry) {
+    console.error(`[council] Unknown member "${name}" — skipping`);
+    return null;
+  }
 
   switch (name) {
     case 'claude':
@@ -194,6 +197,18 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
   ensureDir(join(rawDir, 'phase-0-preflight'));
   ensureDir(join(rawDir, 'phase-1-opening'));
   ensureDir(join(rawDir, 'phase-3-validation'));
+
+  // Validate members
+  const validMembers = members.filter((m) => REGISTRY[m]);
+  if (validMembers.length === 0) {
+    throw new Error('No valid council members — all specified members are unknown');
+  }
+  if (validMembers.length < members.length) {
+    const skipped = members.filter((m) => !REGISTRY[m]);
+    console.error(`[council] Skipping unknown members: ${skipped.join(', ')}`);
+  }
+  // eslint-disable-next-line no-param-reassign
+  members = validMembers;
 
   // Write topic
   writeFileSync(join(baseDir, 'topic.md'), `# ${task}\n`);
@@ -279,8 +294,11 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
 
     // Simple convergence check: if all outputs are very similar, stop early
     const outputs = Object.values(rebuttals);
-    if (outputs.length >= 2 && outputs.every((o) => o.length < 50)) {
-      break; // Short outputs suggest convergence
+    if (outputs.length >= 2 && outputs.every((o) => o.length > 0 && o.length < 50)) {
+      const unique = new Set(outputs.map((o) => o.trim().toLowerCase()));
+      if (unique.size === 1) {
+        break; // Identical short outputs suggest convergence
+      }
     }
   }
 

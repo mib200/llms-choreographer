@@ -235,10 +235,23 @@ export class AcpClient {
 
     const messages = [{ role: 'user', content: [{ type: 'text', text: prompt }] }];
 
-    const response = await this.connection.prompt({
+    const promptPromise = this.connection.prompt({
       sessionId: this.sessionId,
       messages,
     });
+
+    let response;
+    if (timeout) {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          this.cancel().catch(() => {});
+          reject(new Error(`prompt timed out after ${timeout}ms`));
+        }, timeout);
+      });
+      response = await Promise.race([promptPromise, timeoutPromise]);
+    } else {
+      response = await promptPromise;
+    }
 
     // Extract text from the response
     let output = '';

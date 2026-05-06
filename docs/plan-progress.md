@@ -204,4 +204,49 @@
 
 ---
 
+## Final — ce-code-review fixes (SHIPPED)
+
+**Commit:** `f435088` on `feature/acp-migration-2`
+
+### What was done
+Fixed all 28 ce-code-review findings (3 P0, 6 P1, 4 P2) from the Ships 1-5 full migration review, plus 4 regression fixes discovered during review of the fixes themselves.
+
+**P0 fixes (3):**
+- `core/agents/acp-client.mjs` — `prompt()` timeout enforced via `Promise.race` with `this.cancel()` on expiry to prevent orphaned subprocesses
+- `core/runtime/broker.mjs` — CircuitBreaker `recordFailure()` transitions half-open → open immediately on probe failure
+- `core/verifier/loop.mjs` — `checkPendingFeedback()` uses numeric sort (`parseInt` + numeric comparator) for round 10+ correctness
+
+**P1 fixes (6):**
+- `core/council.mjs` — Unknown members logged to stderr, empty members throws error, validMembers filter applied
+- `core/runtime/broker.mjs` — `BufferedEventEmitter.once()` override with `buffer.shift()` to preserve remaining items
+- `core/companion.mjs` — Adversarial-review parse callback returns string (not object), structured parsing moved after `runAgent`
+- `core/council.mjs` — Convergence check requires identical short outputs (not just short), guards against false convergence on error messages
+- `core/git.mjs` — `Math.max(0, ...)` guards negative `diffBytes` when staged diff exceeds cap
+
+**P2 fixes (4):**
+- `core/verifier/loop.mjs` — `yamlValue()` helper splits on first colon only (handles URLs, model names with colons)
+- `core/council.mjs` — Checkpoint paths use `process.cwd()` for absolute path resolution
+- `core/parsers.mjs` — Brace-counting JSON parser replaces greedy `/\{[\s\S]*\}/` regex — handles multiple JSON blocks correctly
+- `core/verifier/loop.mjs` — `checkPendingFeedback()` null guard after filter (corrupted filenames)
+
+**Regression fixes from fix review (4):**
+- `core/companion.mjs` — `renderReviewResult` receives `rawOutput: result.output` (field name mismatch fix)
+- `core/runtime/broker.mjs` — `once()` uses `shift()` instead of `[0]` to preserve remaining buffered events
+- `core/verifier/loop.mjs` — Null guard on `checkPendingFeedback` when no parseable round numbers
+- `core/agents/acp-client.mjs` — Timeout calls `this.cancel()` to prevent orphaned ACP subprocess
+
+### Verification
+- Pre-commit hook: gitnexus analyze ran successfully (1,943 nodes | 2,466 edges | 40 clusters | 43 flows)
+- Unit tests: 29/29 pass (verifier-loop, verifier-composer, verifier-sanitizer, strip-flags, parse-opencode)
+- Syntax check: all 7 modified files pass `node -c`
+
+### Remaining deferred items
+- Test coverage for broker.mjs (403L), goal-assistant.mjs (223L), git.mjs (281L), review-render.mjs (128L)
+- Ship 1 residuals (F8, NFF1) — per plan directive
+- Legacy parser retirement — kept for backward compatibility
+- `codex exec` path retirement — kept for backward compatibility
+- Gemini adapter — deferred per user lock
+
+---
+
 ## Final — ce-code-review (NOT STARTED)

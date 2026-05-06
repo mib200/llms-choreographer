@@ -42,7 +42,9 @@ class CircuitBreaker {
   recordFailure() {
     this.failures++;
     this.lastFailureTime = Date.now();
-    if (this.failures >= this.failureThreshold) {
+    if (this.state === 'half-open') {
+      this.state = 'open';
+    } else if (this.failures >= this.failureThreshold) {
       this.state = 'open';
     }
   }
@@ -148,6 +150,23 @@ class BufferedEventEmitter extends EventEmitter {
 
     const origOn = this.on.bind(this);
     this.on = this.addListener;
+
+    const origOnce = this.once.bind(this);
+    this.once = (event, listener) => {
+      if (this.bufferedEvents.has(event) && !this.drained.has(event)) {
+        const buffer = this.buffers.get(event) || [];
+        if (buffer.length > 0) {
+          const args = buffer.shift();
+          if (buffer.length === 0) {
+            this.drained.add(event);
+            this.buffers.delete(event);
+          }
+          origOnce(event, () => listener(...args));
+          return this;
+        }
+      }
+      return origOnce(event, listener);
+    };
   }
 
   emit(event, ...args) {

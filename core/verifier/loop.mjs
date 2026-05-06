@@ -21,6 +21,12 @@ const VERIFIER_REPORT_SCHEMA = JSON.parse(
 const DEFAULT_MAX_ROUNDS = 3;
 const VERIFIER_DIR = '.choreographer/verifier';
 
+/** Extract value after first colon in a YAML line (handles colons in values). */
+function yamlValue(line) {
+  const idx = line.indexOf(':');
+  return idx >= 0 ? line.slice(idx + 1).trim() : '';
+}
+
 /**
  * Load verifier configuration from .choreographer/verifiers.yaml.
  *
@@ -42,18 +48,18 @@ export function loadVerifierConfig(rootDir) {
 
     if (trimmed.startsWith('- id:')) {
       if (current) verifiers.push(current);
-      current = { id: trimmed.split(':')[1].trim(), depends_on: [], sandbox: {} };
+      current = { id: yamlValue(trimmed), depends_on: [], sandbox: {} };
     } else if (current && trimmed.startsWith('depends_on:')) {
-      const val = trimmed.split(':')[1]?.trim();
+      const val = yamlValue(trimmed);
       current.depends_on = val === '[]' ? [] : (val || '').replace(/[\[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
     } else if (current && trimmed.startsWith('max_rounds:')) {
-      current.max_rounds = parseInt(trimmed.split(':')[1].trim(), 10) || DEFAULT_MAX_ROUNDS;
+      current.max_rounds = parseInt(yamlValue(trimmed), 10) || DEFAULT_MAX_ROUNDS;
     } else if (current && trimmed.startsWith('description:')) {
-      current.description = trimmed.split(':').slice(1).join(':').trim().replace(/^["']|["']$/g, '');
+      current.description = yamlValue(trimmed).replace(/^["']|["']$/g, '');
     } else if (current && trimmed.startsWith('allowed_script:')) {
-      current.allowed_script = trimmed.split(':')[1].trim();
+      current.allowed_script = yamlValue(trimmed);
     } else if (current && trimmed.startsWith('triggers:')) {
-      const val = trimmed.split(':')[1]?.trim();
+      const val = yamlValue(trimmed);
       current.triggers = val === '[]' ? [] : (val || '').replace(/[\[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
     }
   }
@@ -201,8 +207,14 @@ export function checkPendingFeedback(rootDir) {
     if (files.length === 0) continue;
 
     // Get the latest round
-    const latest = files.sort().pop();
-    const round = parseInt(latest.replace('feedback-round-', '').replace('.json', ''), 10);
+    const parsed = files
+      .map((f) => ({ file: f, round: parseInt(f.replace('feedback-round-', '').replace('.json', ''), 10) }))
+      .filter((x) => !isNaN(x.round))
+      .sort((a, b) => a.round - b.round)
+      .pop();
+    if (!parsed) continue;
+    const latest = parsed.file;
+    const round = parsed.round;
     const content = readFileSync(join(dir, latest), 'utf8');
     const report = JSON.parse(content);
 

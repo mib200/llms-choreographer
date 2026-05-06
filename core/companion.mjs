@@ -662,23 +662,22 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block */ }
 
-    // Use adapter if available and --transport=acp, otherwise legacy
-    const result = await runAgent('codex', codexEntry.binary, ['exec', prompt], (raw) => {
-      try {
-        const parsed = parseStructuredOutput(raw, reviewSchema);
-        return { parsed, rawOutput: raw };
-      } catch (err) {
-        return { parsed: null, parseError: err.message, rawOutput: raw };
-      }
-    });
+    // Use adapter if available and — parse callback must return string
+    const result = await runAgent('codex', codexEntry.binary, ['exec', prompt], (raw) => raw);
 
-    const rendered = renderReviewResult(result, {
+    // Parse structured output after runAgent returns
+    let parsed = null;
+    try {
+      parsed = parseStructuredOutput(result.output, reviewSchema);
+    } catch { /* graceful degradation — raw output still available */ }
+
+    const rendered = renderReviewResult({ ...result, parsed, rawOutput: result.output }, {
       targetLabel: context.summary,
       reviewLabel: 'Adversarial Review',
     });
 
     if (jsonMode) {
-      console.log(JSON.stringify({ command: 'adversarial-review', target: context.summary, verdict: result.parsed?.verdict, findings: result.parsed?.findings || [] }));
+      console.log(JSON.stringify({ command: 'adversarial-review', target: context.summary, verdict: parsed?.verdict, findings: parsed?.findings || [] }));
     } else {
       console.log(rendered);
     }
