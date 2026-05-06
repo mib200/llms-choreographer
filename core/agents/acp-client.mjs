@@ -16,6 +16,7 @@
 
 import { spawn } from 'node:child_process';
 import { ClientSideConnection, ndJsonStream } from '@agentclientprotocol/sdk';
+import { buildAgentEnv } from '../env.mjs';
 
 /**
  * Build a Client handler that auto-denies permissions in non-interactive mode.
@@ -34,14 +35,9 @@ function makeClientHandler({ interactive = false, permissionAllowlist = new Set(
      */
     async requestPermission(params) {
       const toolName = params.tool_name ?? params.tool ?? 'unknown';
-      if (interactive) {
-        // In interactive mode, we'd prompt the user. For now, allow.
-        return { outcome: 'allow' };
-      }
       if (permissionAllowlist.has(toolName)) {
         return { outcome: 'allow' };
       }
-      // Auto-deny: security posture for non-interactive contexts.
       return { outcome: 'deny' };
     },
 
@@ -75,10 +71,10 @@ function makeClientHandler({ interactive = false, permissionAllowlist = new Set(
  * @param {object} [env]
  * @returns {{proc: import('node:child_process').ChildProcess, stream: import('@agentclientprotocol/sdk').Stream}}
  */
-function spawnAcpSubprocess(binary, args, env = process.env) {
+function spawnAcpSubprocess(binary, args, env) {
   const proc = spawn(binary, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env,
+    env: env ?? buildAgentEnv(),
   });
 
   // Node.js ReadableStream from subprocess stdout

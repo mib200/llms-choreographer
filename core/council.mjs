@@ -10,8 +10,8 @@
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { spawn } from 'node:child_process';
-import { REGISTRY, runAgent } from './runners.mjs';
+import { REGISTRY } from './runners.mjs';
+import { createBroker } from './runtime/broker.mjs';
 import { parseStructuredOutput } from './parsers.mjs';
 import { emit } from './observability.mjs';
 
@@ -116,67 +116,20 @@ function buildMemberPrompt(member, phase, topic, clarifications, otherPositions 
   return topic;
 }
 
-async function invokeMember(name, binary, prompt, args = []) {
-  const timeoutMs = process.env.CHOREO_TEST_MODE ? 5000 : 30000;
-  return new Promise((resolve) => {
-    const allArgs = [...args, prompt];
-    const proc = spawn(binary, allArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-    const out = [];
-    const err = [];
-
-    const timer = setTimeout(() => {
-      proc.kill('SIGTERM');
-      resolve({ name, output: Buffer.concat(out).toString().trim(), error: 'timeout', exitCode: 1 });
-    }, timeoutMs);
-
-    proc.stdout.on('data', (d) => out.push(d));
-    proc.stderr.on('data', (d) => err.push(d));
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({
-        name,
-        output: Buffer.concat(out).toString().trim(),
-        error: Buffer.concat(err).toString().trim(),
-        exitCode: code ?? 1,
-      });
+async function invokeMemberViaBroker(broker, name, prompt, { model, slug, phase, round } = {}) {
+  const timeoutMs = process.env.CHOREO_TEST_MODE ? 5000 : 5 * 60_000;
+  try {
+    const result = await broker.invoke({
+      agentName: name,
+      prompt,
+      model: (model && model !== 'default') ? model : undefined,
+      timeout: timeoutMs,
+      idempotencyKey: slug ? `${slug}:${phase}:${name}:${round ?? 0}` : undefined,
     });
-    proc.on('error', (e) => {
-      clearTimeout(timer);
-      resolve({ name, output: '', error: e.message, exitCode: 1 });
-    });
-  });
-}
-
-function getMemberInvocation(name, prompt, model) {
-  const entry = REGISTRY[name];
-  if (!entry) {
-    console.error(`[council] Unknown member "${name}" — skipping`);
-    return null;
-  }
-
-  const modelArgs = (model && model !== 'default') ? ['--model', model] : [];
-
-  switch (name) {
-    case 'claude':
-      return {
-        binary: entry.binary,
-        args: [...modelArgs, '--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        parse: (s) => s,
-      };
-    case 'codex':
-      return {
-        binary: entry.binary,
-        args: ['exec', ...modelArgs, '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'],
-        parse: (s) => s,
-      };
-    case 'opencode':
-      return {
-        binary: entry.binary,
-        args: ['run', ...modelArgs, '--dangerously-skip-permissions'],
-        parse: (s) => s,
-      };
-    default:
-      return null;
+    return { name, output: result.output || '', error: result.error || '', exitCode: result.exitCode ?? 0 };
+  } catch (err) {
+    console.error(`[council] Member ${name} failed: ${err.message}`);
+    return { name, output: '', error: err.message, exitCode: 1 };
   }
 }
 
@@ -194,6 +147,9 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
   const slug = generateSlug(task);
   const baseDir = join('debates', 'council', slug);
   const rawDir = join(baseDir, 'raw');
+
+  const broker = createBroker();
+  await broker.sessionStart(slug);
 
   // Check for interrupted council
   const checkpoint = readCheckpoint(slug);
@@ -234,12 +190,9 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
     // Collect clarifying questions from non-Claude members
     const questions = [];
     for (const member of members.filter((m) => m !== 'claude')) {
-      const invocation = getMemberInvocation(member, '', models[member]);
-      if (!invocation) continue;
-
       const scopingPrompt = `You are about to participate in a structured multi-model debate on: ${task}\n\nList 0 to 3 clarifying questions you would need answered before you can take a strong position. Format as a numbered list. If the topic is complete enough, respond with exactly: NO QUESTIONS.`;
 
-      const result = await invokeMember(member, invocation.binary, scopingPrompt, invocation.args);
+      const result = await invokeMemberViaBroker(broker, member, scopingPrompt, { model: models[member], slug, phase: 'preflight', round: 0 });
       if (result.output && !result.output.includes('NO QUESTIONS')) {
         const qs = result.output.split('\n').filter((l) => l.match(/^\d+\./));
         questions.push(...qs.map((q) => q.replace(/^\d+\.\s*/, '')));
@@ -257,11 +210,8 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
 
   const openings = {};
   const openingPromises = members.map(async (member) => {
-    const invocation = getMemberInvocation(member, '', models[member]);
-    if (!invocation) return;
-
     const prompt = buildMemberPrompt(member, 'opening', task, clarifications);
-    const result = await invokeMember(member, invocation.binary, prompt, invocation.args);
+    const result = await invokeMemberViaBroker(broker, member, prompt, { model: models[member], slug, phase: 'opening', round: 0 });
     openings[member] = result.output;
 
     const model = models[member] || 'default';
@@ -289,11 +239,8 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
 
     const rebuttals = {};
     const rebuttalPromises = members.map(async (member) => {
-      const invocation = getMemberInvocation(member, '', models[member]);
-      if (!invocation) return;
-
       const prompt = buildMemberPrompt(member, 'rebuttal', task, clarifications, positions);
-      const result = await invokeMember(member, invocation.binary, prompt, invocation.args);
+      const result = await invokeMemberViaBroker(broker, member, prompt, { model: models[member], slug, phase: 'rebuttal', round });
       rebuttals[member] = result.output;
 
       const model = models[member] || 'default';
@@ -303,12 +250,13 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
     await Promise.all(rebuttalPromises);
     positions = { ...positions, ...rebuttals };
 
-    // Simple convergence check: if all outputs are very similar, stop early
-    const outputs = Object.values(rebuttals);
-    if (outputs.length >= 2 && outputs.every((o) => o.length > 0 && o.length < 50)) {
+    // Convergence check: skip error-like outputs to avoid false-triggering
+    const outputs = Object.values(rebuttals)
+      .filter((o) => o.length > 0 && !o.startsWith('timeout') && !o.startsWith('[error'));
+    if (outputs.length >= 2 && outputs.every((o) => o.length < 50)) {
       const unique = new Set(outputs.map((o) => o.trim().toLowerCase()));
       if (unique.size === 1) {
-        break; // Identical short outputs suggest convergence
+        break;
       }
     }
   }
@@ -328,11 +276,10 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
     `5. Confidence: FULL CONSENSUS / PARTIAL CONSENSUS / DEADLOCK`,
   ].join('\n');
 
-  // Claude writes synthesis directly (orchestrator)
-  const synthesisInvocation = getMemberInvocation('claude', '', models['claude']);
+  // Claude writes synthesis
   let synthesis = '';
-  if (synthesisInvocation) {
-    const result = await invokeMember('claude', synthesisInvocation.binary, synthesisPrompt, synthesisInvocation.args);
+  {
+    const result = await invokeMemberViaBroker(broker, 'claude', synthesisPrompt, { model: models['claude'], slug, phase: 'synthesis', round: 0 });
     synthesis = result.output;
   }
 
@@ -342,9 +289,6 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
   // Validation (parallel for non-Claude members)
   const validations = {};
   const validationPromises = members.filter((m) => m !== 'claude').map(async (member) => {
-    const invocation = getMemberInvocation(member, '', models[member]);
-    if (!invocation) return;
-
     const valPrompt = [
       `SYNTHESIS VALIDATION\n\n`,
       `Topic: ${task}\n\n`,
@@ -353,7 +297,7 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
       `Rate your agreement: FULL CONSENSUS / PARTIAL CONSENSUS / DEADLOCK`,
     ].join('');
 
-    const result = await invokeMember(member, invocation.binary, valPrompt, invocation.args);
+    const result = await invokeMemberViaBroker(broker, member, valPrompt, { model: models[member], slug, phase: 'validation', round: 0 });
     validations[member] = result.output;
 
     writeWithFrontmatter(join(rawDir, 'phase-3-validation', `${member}.md`), member, models[member] || 'default', 'validation', result.exitCode, result.output);
@@ -398,6 +342,9 @@ export async function runCouncil({ task, members = ['claude', 'codex'], models =
       try { require('node:fs').unlinkSync(path); } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
+
+  // Shutdown broker
+  await broker.shutdown();
 
   // Observability
   try {

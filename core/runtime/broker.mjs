@@ -202,8 +202,9 @@ export class Broker {
     /** @type {Map<string, LoadQueue>} */
     this.loadQueues = new Map();
     this.dlq = new DeadLetterQueue();
-    /** @type {Map<string, any>} */
     this.idempotencyCache = new Map();
+    this.idempotencyMaxSize = 1000;
+    this.idempotencyTtlMs = 60 * 60 * 1000;
     this.sessionId = null;
   }
 
@@ -265,10 +266,12 @@ export class Broker {
    * @param {string} [opts.mode]
    * @returns {Promise<import('../agents/base.mjs').InvokeResult>}
    */
-  async invoke({ agentName, prompt, idempotencyKey, model, effort, structuredSchema, timeout, onProgress, resumeSessionId, mode }) {
-    // Idempotency check
+  async invoke({ agentName, prompt, idempotencyKey, model, effort, structuredSchema, timeout = 5 * 60_000, onProgress, resumeSessionId, mode }) {
+    // Idempotency check with TTL
     if (idempotencyKey && this.idempotencyCache.has(idempotencyKey)) {
-      return this.idempotencyCache.get(idempotencyKey);
+      const entry = this.idempotencyCache.get(idempotencyKey);
+      if (Date.now() - entry.t < this.idempotencyTtlMs) return entry.v;
+      this.idempotencyCache.delete(idempotencyKey);
     }
 
     const adapter = this.adapters.get(agentName);
@@ -296,9 +299,13 @@ export class Broker {
         breaker.recordSuccess();
         this._emitAgent(agentName, 'session_update', { agent_name: agentName, type: 'completion', result: invokeResult });
 
-        // Cache for idempotency
+        // Cache for idempotency (bounded: FIFO eviction + TTL)
         if (idempotencyKey) {
-          this.idempotencyCache.set(idempotencyKey, invokeResult);
+          if (this.idempotencyCache.size >= this.idempotencyMaxSize) {
+            const oldestKey = this.idempotencyCache.keys().next().value;
+            this.idempotencyCache.delete(oldestKey);
+          }
+          this.idempotencyCache.set(idempotencyKey, { v: invokeResult, t: Date.now() });
         }
 
         // Observability
@@ -421,4 +428,4 @@ export function createBroker() {
   return broker;
 }
 
-export { CircuitBreaker, LoadQueue, DeadLetterQueue };
+export { CircuitBreaker, LoadQueue, DeadLetterQueue, BufferedEventEmitter };

@@ -10,6 +10,7 @@ import { AgentAdapter } from './base.mjs';
 import { AcpClient, parseStructured } from './acp-client.mjs';
 import { spawn } from 'node:child_process';
 import { parseClaudeStreamJson } from '../parsers.mjs';
+import { buildAgentEnv } from '../env.mjs';
 
 export class ClaudeAdapter extends AgentAdapter {
   get name() { return 'claude'; }
@@ -33,6 +34,7 @@ export class ClaudeAdapter extends AgentAdapter {
       const r = spawnSync('npx', ['@agentclientprotocol/claude-agent-acp', '--version'], {
         encoding: 'utf8',
         timeout: 5000,
+        env: buildAgentEnv(),
       });
       if (r.status === 0) {
         return { available: true, transport: 'acp' };
@@ -42,7 +44,7 @@ export class ClaudeAdapter extends AgentAdapter {
     // Fallback: check if claude CLI is available
     try {
       const { spawnSync } = await import('node:child_process');
-      const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 5000 });
+      const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 5000, env: buildAgentEnv() });
       if (r.status === 0) {
         return { available: true, transport: 'native', reason: 'ACP stdio unavailable, using CLI fallback' };
       }
@@ -56,10 +58,11 @@ export class ClaudeAdapter extends AgentAdapter {
     const availability = await this.checkAvailability();
 
     if (availability.transport === 'acp') {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      } catch { /* ACP failed — fall through to native */ }
     }
 
-    // Native fallback: CLI subprocess
     return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
   }
 
@@ -93,7 +96,7 @@ export class ClaudeAdapter extends AgentAdapter {
       const args = ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'];
       if (model) args.splice(0, 0, '--model', model);
 
-      const proc = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
       const out = [];
       const err = [];
 

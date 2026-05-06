@@ -249,4 +249,65 @@ Fixed all 28 ce-code-review findings (3 P0, 6 P1, 4 P2) from the Ships 1-5 full 
 
 ---
 
+## Council Review Fixes — All Findings Resolved (SHIPPED)
+
+**Commit:** `dfef65c` on `feature/acp-migration-2`
+
+### Context
+5-member council review (codex/gpt-5.5, opencode1/kimi-k2.6, opencode2/qwen3.6-plus, opencode3/claude-opus-4-7, opencode4/gemini-3.1-pro) unanimously BLOCKed merge. Key insight: "The migration moved invocations OFF the secure path onto an insecure adapter path."
+
+**Council decision:** `debates/council/code-review-plan-implementation-6aaecd/decision.md`
+
+### What was done
+
+**P0 fixes (3 — unanimous blockers):**
+- Rebuilt stale plugin bundles (ship gate was red)
+- Wired broker into ALL production paths: companion.mjs (agent, debug, vote, review, second-opinion, adversarial-review) and council.mjs now use `broker.invoke()` exclusively
+- Scrubbed env in all 7 adapter spawn calls via `buildAgentEnv()` from new `core/env.mjs` (breaks circular import)
+
+**P0-P1 contested fixes (3):**
+- Permission auto-allow removed — deny-by-default for all sessions
+- Idempotency cache bounded: 1000 entries, 1hr TTL, FIFO eviction
+- Verify command wired to `runVerifierLoop()` via broker (was stub)
+
+**P1-P2 fixes (4):**
+- Council convergence filter excludes error-like short outputs
+- Plan parser stops at heading, not blank line
+- Deleted dead `ALLOWED_PREFIXES` constant from sanitizer
+- Default broker timeout: 5 minutes
+
+**Architecture changes:**
+- Extracted `buildAgentEnv` to `core/env.mjs` to break runners↔adapters circular import
+- Added ACP-to-native fallback in all adapters (try/catch in `invoke()`)
+- Removed `runAgent` from production paths (kept in runners.mjs for backward compat export)
+
+**Tests:** 164 pass (was 123), 8 new test files:
+- `adapter-env.test.mjs` — env scrub verification
+- `broker-wiring.test.mjs` — production path flows through broker
+- `broker-events.test.mjs` — BufferedEventEmitter
+- `verifier-loop-run.test.mjs` — full verifier loop e2e
+- `endpoint.test.mjs` — socket path resolution
+- `lifecycle.test.mjs` — session start/end
+- `goal-assistant.test.mjs` — interview + plan extraction
+- `git.test.mjs` — scope detection
+
+### Verification
+- `npm test`: 164/164 pass, 0 fail
+- `npm run check-bundles`: green
+- Regression greps: 0 unsafe spawns, 0 direct runAgent in production, 0 permission auto-allow
+
+### Documentation
+- Implementation plan: `docs/plans/2026-05-06-council-fixes-implementation-plan.md`
+- Design spec: `docs/specs/2026-05-06-council-fixes-design.md`
+- Compound learning: `docs/solutions/architecture-patterns/broker-wiring-dead-code-prevention-2026-05-06.md`
+- Council decision: `debates/council/code-review-plan-implementation-6aaecd/decision.md`
+
+### Remaining deferred items
+- Ship 1 residuals (F8, NFF1) — per plan directive
+- Legacy parser retirement — kept for backward compat
+- Gemini adapter — deferred per user lock
+- Socket chmod 0600 (SEC-003) — noted, not blocking
+
+---
+
 ## Final — ce-code-review (NOT STARTED)

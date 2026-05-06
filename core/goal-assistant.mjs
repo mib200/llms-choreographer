@@ -201,7 +201,7 @@ export function initGoalsFromPlan(rootDir, planPath) {
     if (inCriteria && line.trim().startsWith('-')) {
       criteria.push(line.trim().slice(1).trim());
     }
-    if (inCriteria && line.trim() === '') {
+    if (inCriteria && /^#{1,3}\s/.test(line.trim())) {
       inCriteria = false;
     }
   }

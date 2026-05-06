@@ -11,6 +11,7 @@
 import { AgentAdapter } from './base.mjs';
 import { AcpClient, parseStructured } from './acp-client.mjs';
 import { spawn } from 'node:child_process';
+import { buildAgentEnv } from '../env.mjs';
 
 export class OpenCodeAdapter extends AgentAdapter {
   get name() { return 'opencode'; }
@@ -30,7 +31,7 @@ export class OpenCodeAdapter extends AgentAdapter {
   async checkAvailability() {
     try {
       const { spawnSync } = await import('node:child_process');
-      const r = spawnSync('opencode', ['--version'], { encoding: 'utf8', timeout: 5000 });
+      const r = spawnSync('opencode', ['--version'], { encoding: 'utf8', timeout: 5000, env: buildAgentEnv() });
       if (r.status === 0) {
         return { available: true, transport: 'acp' };
       }
@@ -52,10 +53,11 @@ export class OpenCodeAdapter extends AgentAdapter {
     const availability = await this.checkAvailability();
 
     if (availability.transport === 'acp') {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      } catch { /* ACP failed — fall through to native */ }
     }
 
-    // Native fallback: opencode run
     return this._invokeNative({ prompt, model, structuredSchema, timeout });
   }
 
@@ -89,7 +91,7 @@ export class OpenCodeAdapter extends AgentAdapter {
       const args = ['run', prompt, '--dangerously-skip-permissions'];
       if (model) args.splice(1, 0, '--model', model);
 
-      const proc = spawn('opencode', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn('opencode', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
       const out = [];
       const err = [];
 

@@ -15,13 +15,6 @@ const INSTRUCTION_PATTERNS = [
   /^(go to|navigate to|open|edit|create)\s+\S+\s+and\b/i,
 ];
 
-// Allowed token categories in feedback
-const ALLOWED_PREFIXES = [
-  'claim', 'expected', 'actual', 'found', 'missing', 'error', 'warning',
-  'line', 'file', 'function', 'class', 'method', 'variable', 'type',
-  'assert', 'test', 'script', 'exit', 'stdout', 'stderr',
-  'verified', 'failed', 'skipped', 'blocked',
-];
 
 /**
  * Sanitize verifier feedback before injecting into builder context.

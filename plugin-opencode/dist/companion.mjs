@@ -37,22 +37,55 @@ function parseOpenCodeOutput(raw) {
 function parseStructuredOutput(raw, schema) {
   if (!schema) return null;
   try {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (schema.required && Array.isArray(schema.required)) {
-      for (const key of schema.required) {
-        if (!(key in parsed)) return null;
-      }
-    }
-    if (schema.properties) {
-      for (const [key, propSchema] of Object.entries(schema.properties)) {
-        if (key in parsed && propSchema.enum && !propSchema.enum.includes(parsed[key])) {
-          return null;
+    let start = raw.indexOf("{");
+    while (start >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let i = start; i < raw.length; i++) {
+        const ch = raw[i];
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (ch === "\\" && inString) {
+          escape = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = !inString;
+          continue;
+        }
+        if (inString) continue;
+        if (ch === "{") depth++;
+        if (ch === "}") {
+          depth--;
+          if (depth === 0) {
+            const candidate = raw.slice(start, i + 1);
+            try {
+              const parsed = JSON.parse(candidate);
+              if (schema.required && Array.isArray(schema.required)) {
+                for (const key of schema.required) {
+                  if (!(key in parsed)) return null;
+                }
+              }
+              if (schema.properties) {
+                for (const [k, propSchema] of Object.entries(schema.properties)) {
+                  if (k in parsed && propSchema.enum && !propSchema.enum.includes(parsed[k])) {
+                    return null;
+                  }
+                }
+              }
+              return parsed;
+            } catch {
+            }
+            break;
+          }
         }
       }
+      start = raw.indexOf("{", start + 1);
     }
-    return parsed;
+    return null;
   } catch {
     return null;
   }
@@ -16930,6 +16963,52 @@ var RequestError = class _RequestError extends Error {
   }
 };
 
+// core/env.mjs
+var ENV_ALLOW_EXACT = /* @__PURE__ */ new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TERM",
+  "TZ",
+  "TMPDIR",
+  "LANG",
+  "PWD",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "NODE_OPTIONS",
+  "NODE_ENV",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_VERTEX_PROJECT_ID",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "CHOREO_LOG_DIR",
+  "CHOREO_LOG_MAX_BYTES",
+  "CHOREO_AGENT_ENV_PASSTHROUGH"
+]);
+var ENV_ALLOW_PREFIXES = [
+  "LC_",
+  "XDG_",
+  "ANTHROPIC_",
+  "CLAUDE_",
+  "OPENCODE_",
+  "CODEX_"
+];
+function buildAgentEnv(src = process.env) {
+  if (src.CHOREO_AGENT_ENV_PASSTHROUGH === "1") return { ...src };
+  const out = /* @__PURE__ */ Object.create(null);
+  for (const [key, value] of Object.entries(src)) {
+    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 // core/agents/acp-client.mjs
 function makeClientHandler({ interactive = false, permissionAllowlist = /* @__PURE__ */ new Set(), onUpdate } = {}) {
   return (agent) => ({
@@ -16939,9 +17018,6 @@ function makeClientHandler({ interactive = false, permissionAllowlist = /* @__PU
      */
     async requestPermission(params) {
       const toolName = params.tool_name ?? params.tool ?? "unknown";
-      if (interactive) {
-        return { outcome: "allow" };
-      }
       if (permissionAllowlist.has(toolName)) {
         return { outcome: "allow" };
       }
@@ -16965,10 +17041,10 @@ function makeClientHandler({ interactive = false, permissionAllowlist = /* @__PU
     }
   });
 }
-function spawnAcpSubprocess(binary, args, env = process.env) {
+function spawnAcpSubprocess(binary, args, env) {
   const proc = spawn(binary, args, {
     stdio: ["pipe", "pipe", "pipe"],
-    env
+    env: env ?? buildAgentEnv()
   });
   const stdoutStream = new ReadableStream({
     start(controller) {
@@ -17095,10 +17171,23 @@ var AcpClient = class {
     if (!this.connection) throw new Error("not initialized");
     if (!this.sessionId) throw new Error("no active session");
     const messages = [{ role: "user", content: [{ type: "text", text: prompt }] }];
-    const response = await this.connection.prompt({
+    const promptPromise = this.connection.prompt({
       sessionId: this.sessionId,
       messages
     });
+    let response;
+    if (timeout) {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          this.cancel().catch(() => {
+          });
+          reject(new Error(`prompt timed out after ${timeout}ms`));
+        }, timeout);
+      });
+      response = await Promise.race([promptPromise, timeoutPromise]);
+    } else {
+      response = await promptPromise;
+    }
     let output = "";
     if (response.output) {
       for (const block of response.output) {
@@ -17171,7 +17260,8 @@ var ClaudeAdapter = class extends AgentAdapter {
       const { spawnSync: spawnSync3 } = await import("node:child_process");
       const r = spawnSync3("npx", ["@agentclientprotocol/claude-agent-acp", "--version"], {
         encoding: "utf8",
-        timeout: 5e3
+        timeout: 5e3,
+        env: buildAgentEnv()
       });
       if (r.status === 0) {
         return { available: true, transport: "acp" };
@@ -17180,7 +17270,7 @@ var ClaudeAdapter = class extends AgentAdapter {
     }
     try {
       const { spawnSync: spawnSync3 } = await import("node:child_process");
-      const r = spawnSync3("claude", ["--version"], { encoding: "utf8", timeout: 5e3 });
+      const r = spawnSync3("claude", ["--version"], { encoding: "utf8", timeout: 5e3, env: buildAgentEnv() });
       if (r.status === 0) {
         return { available: true, transport: "native", reason: "ACP stdio unavailable, using CLI fallback" };
       }
@@ -17192,7 +17282,10 @@ var ClaudeAdapter = class extends AgentAdapter {
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
     if (availability.transport === "acp") {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      } catch {
+      }
     }
     return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
   }
@@ -17222,7 +17315,7 @@ var ClaudeAdapter = class extends AgentAdapter {
     return new Promise((resolve) => {
       const args = ["--print", "--output-format", "stream-json", "--verbose", prompt, "--dangerously-skip-permissions"];
       if (model) args.splice(0, 0, "--model", model);
-      const proc = spawn2("claude", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn2("claude", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
       const out = [];
       const err = [];
       const timer = timeout ? setTimeout(() => {
@@ -17269,7 +17362,7 @@ var CodexAdapter = class extends AgentAdapter {
   async checkAvailability() {
     try {
       const { spawnSync: spawnSync3 } = await import("node:child_process");
-      const r = spawnSync3("codex", ["--version"], { encoding: "utf8", timeout: 5e3 });
+      const r = spawnSync3("codex", ["--version"], { encoding: "utf8", timeout: 5e3, env: buildAgentEnv() });
       if (r.status === 0) {
         return { available: true, transport: "acp" };
       }
@@ -17281,7 +17374,10 @@ var CodexAdapter = class extends AgentAdapter {
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
     if (availability.transport === "acp") {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+      } catch {
+      }
     }
     return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
   }
@@ -17311,7 +17407,7 @@ var CodexAdapter = class extends AgentAdapter {
       const args = ["exec", prompt];
       if (model) args.splice(0, 0, "--model", model);
       if (effort) args.splice(0, 0, "--effort", effort);
-      const proc = spawn3("codex", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn3("codex", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
       const out = [];
       const err = [];
       const timer = timeout ? setTimeout(() => {
@@ -17357,7 +17453,7 @@ var OpenCodeAdapter = class extends AgentAdapter {
   async checkAvailability() {
     try {
       const { spawnSync: spawnSync3 } = await import("node:child_process");
-      const r = spawnSync3("opencode", ["--version"], { encoding: "utf8", timeout: 5e3 });
+      const r = spawnSync3("opencode", ["--version"], { encoding: "utf8", timeout: 5e3, env: buildAgentEnv() });
       if (r.status === 0) {
         return { available: true, transport: "acp" };
       }
@@ -17377,7 +17473,10 @@ var OpenCodeAdapter = class extends AgentAdapter {
   async invoke({ prompt, model, effort, structuredSchema, timeout, onProgress, sandbox, resumeSessionId, mode }) {
     const availability = await this.checkAvailability();
     if (availability.transport === "acp") {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId, mode });
+      } catch {
+      }
     }
     return this._invokeNative({ prompt, model, structuredSchema, timeout });
   }
@@ -17408,7 +17507,7 @@ var OpenCodeAdapter = class extends AgentAdapter {
     return new Promise((resolve) => {
       const args = ["run", prompt, "--dangerously-skip-permissions"];
       if (model) args.splice(1, 0, "--model", model);
-      const proc = spawn4("opencode", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn4("opencode", args, { stdio: ["ignore", "pipe", "pipe"], env: buildAgentEnv() });
       const out = [];
       const err = [];
       const timer = timeout ? setTimeout(() => {
@@ -17443,55 +17542,6 @@ var REGISTRY = {
 };
 var CLI_CHECK_TIMEOUT_MS = 5e3;
 var AGENT_TIMEOUT_MS = 5 * 6e4;
-var ENV_ALLOW_EXACT = /* @__PURE__ */ new Set([
-  // Locale + shell basics.
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "TERM",
-  "TZ",
-  "TMPDIR",
-  "LANG",
-  "PWD",
-  "NO_COLOR",
-  "FORCE_COLOR",
-  // Node runtime knobs that affect tool behavior predictably.
-  "NODE_OPTIONS",
-  "NODE_ENV",
-  // Anthropic / Claude CLI direct-API keys (read by `claude`).
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_BASE_URL",
-  "ANTHROPIC_VERTEX_PROJECT_ID",
-  "CLAUDE_CODE_USE_BEDROCK",
-  "CLAUDE_CODE_USE_VERTEX",
-  // OpenAI / Codex CLI direct-API keys.
-  "OPENAI_API_KEY",
-  "OPENAI_BASE_URL",
-  // Choreo configuration so tests + ops signals flow to the child.
-  "CHOREO_LOG_DIR",
-  "CHOREO_LOG_MAX_BYTES",
-  "CHOREO_AGENT_ENV_PASSTHROUGH"
-]);
-var ENV_ALLOW_PREFIXES = [
-  "LC_",
-  "XDG_",
-  "ANTHROPIC_",
-  "CLAUDE_",
-  "OPENCODE_",
-  "CODEX_"
-];
-function buildAgentEnv(src = process.env) {
-  if (src.CHOREO_AGENT_ENV_PASSTHROUGH === "1") return { ...src };
-  const out = /* @__PURE__ */ Object.create(null);
-  for (const [key, value] of Object.entries(src)) {
-    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
-      out[key] = value;
-    }
-  }
-  return out;
-}
 function checkCli(binary) {
   const r = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: CLI_CHECK_TIMEOUT_MS });
   if (r.error?.code === "ENOENT") return { status: "not-installed", version: "" };
@@ -17727,10 +17777,357 @@ function rotate() {
   }
 }
 
+// core/runtime/broker.mjs
+import { EventEmitter } from "node:events";
+var DEFAULT_FAILURE_THRESHOLD = 5;
+var DEFAULT_RECOVERY_TIMEOUT_MS = 6e4;
+var CircuitBreaker = class {
+  constructor({ failureThreshold = DEFAULT_FAILURE_THRESHOLD, recoveryTimeoutMs = DEFAULT_RECOVERY_TIMEOUT_MS } = {}) {
+    this.failureThreshold = failureThreshold;
+    this.recoveryTimeoutMs = recoveryTimeoutMs;
+    this.failures = 0;
+    this.lastFailureTime = 0;
+    this.state = "closed";
+  }
+  recordSuccess() {
+    this.failures = 0;
+    this.state = "closed";
+  }
+  recordFailure() {
+    this.failures++;
+    this.lastFailureTime = Date.now();
+    if (this.state === "half-open") {
+      this.state = "open";
+    } else if (this.failures >= this.failureThreshold) {
+      this.state = "open";
+    }
+  }
+  canExecute() {
+    if (this.state === "closed") return true;
+    if (this.state === "open") {
+      if (Date.now() - this.lastFailureTime >= this.recoveryTimeoutMs) {
+        this.state = "half-open";
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+  trip() {
+    this.state = "open";
+    this.lastFailureTime = Date.now();
+  }
+};
+var DeadLetterQueue = class {
+  constructor(maxSize = 100) {
+    this.maxSize = maxSize;
+    this.messages = [];
+  }
+  enqueue(message) {
+    this.messages.push({ ...message, enqueuedAt: Date.now() });
+    if (this.messages.length > this.maxSize) {
+      this.messages.shift();
+    }
+  }
+  drain() {
+    const msgs = [...this.messages];
+    this.messages = [];
+    return msgs;
+  }
+  get size() {
+    return this.messages.length;
+  }
+};
+var LoadQueue = class {
+  constructor() {
+    this.queue = [];
+    this.processing = false;
+  }
+  async enqueue(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject });
+      this._processNext();
+    });
+  }
+  async _processNext() {
+    if (this.processing || this.queue.length === 0) return;
+    this.processing = true;
+    const { fn, resolve, reject } = this.queue.shift();
+    try {
+      const result = await fn();
+      resolve(result);
+    } catch (err) {
+      reject(err);
+    } finally {
+      this.processing = false;
+      this._processNext();
+    }
+  }
+  get depth() {
+    return this.queue.length;
+  }
+};
+var BufferedEventEmitter = class extends EventEmitter {
+  constructor({ bufferedEvents = /* @__PURE__ */ new Set() } = {}) {
+    super();
+    this.bufferedEvents = bufferedEvents;
+    this.buffers = /* @__PURE__ */ new Map();
+    this.drained = /* @__PURE__ */ new Set();
+    const origAddListener = this.addListener.bind(this);
+    this.addListener = (event, listener) => {
+      if (this.bufferedEvents.has(event) && !this.drained.has(event)) {
+        const buffer = this.buffers.get(event) || [];
+        for (const args of buffer) {
+          listener(...args);
+        }
+        this.drained.add(event);
+        this.buffers.delete(event);
+      }
+      return origAddListener(event, listener);
+    };
+    const origOn = this.on.bind(this);
+    this.on = this.addListener;
+    const origOnce = this.once.bind(this);
+    this.once = (event, listener) => {
+      if (this.bufferedEvents.has(event) && !this.drained.has(event)) {
+        const buffer = this.buffers.get(event) || [];
+        if (buffer.length > 0) {
+          const args = buffer.shift();
+          if (buffer.length === 0) {
+            this.drained.add(event);
+            this.buffers.delete(event);
+          }
+          origOnce(event, () => listener(...args));
+          return this;
+        }
+      }
+      return origOnce(event, listener);
+    };
+  }
+  emit(event, ...args) {
+    if (this.bufferedEvents.has(event) && this.listenerCount(event) === 0) {
+      if (!this.buffers.has(event)) this.buffers.set(event, []);
+      this.buffers.get(event).push(args);
+      return true;
+    }
+    return super.emit(event, ...args);
+  }
+};
+var BUFFERED_EVENTS = /* @__PURE__ */ new Set([
+  "builder_stop",
+  "verifier_dispatch",
+  "verifier_report",
+  "lifecycle_session_start",
+  "lifecycle_session_end"
+]);
+var Broker = class {
+  constructor() {
+    this.agents = /* @__PURE__ */ new Map();
+    this.events = new BufferedEventEmitter({ bufferedEvents: BUFFERED_EVENTS });
+    this.adapters = /* @__PURE__ */ new Map();
+    this.circuitBreakers = /* @__PURE__ */ new Map();
+    this.loadQueues = /* @__PURE__ */ new Map();
+    this.dlq = new DeadLetterQueue();
+    this.idempotencyCache = /* @__PURE__ */ new Map();
+    this.idempotencyMaxSize = 1e3;
+    this.idempotencyTtlMs = 60 * 60 * 1e3;
+    this.sessionId = null;
+  }
+  /**
+   * Register an adapter for an agent name.
+   *
+   * @param {string} name
+   * @param {import('../agents/base.mjs').AgentAdapter} adapter
+   */
+  registerAdapter(name, adapter) {
+    this.adapters.set(name, adapter);
+    this.circuitBreakers.set(name, new CircuitBreaker());
+    this.loadQueues.set(name, new LoadQueue());
+  }
+  /**
+   * Initialize the broker for a session.
+   * Disposes existing agents and recreates them.
+   *
+   * @param {string} sessionId
+   */
+  async sessionStart(sessionId) {
+    this.sessionId = sessionId;
+    for (const [name] of this.agents) {
+      this.agents.delete(name);
+    }
+    for (const name of this.adapters.keys()) {
+      this.agents.set(name, new EventEmitter());
+    }
+    this.events.emit("lifecycle_session_start", { session_id: sessionId, timestamp: Date.now() });
+  }
+  /**
+   * Tear down the broker for a session.
+   */
+  async sessionEnd() {
+    this.events.emit("lifecycle_session_end", { session_id: this.sessionId, timestamp: Date.now() });
+    this.sessionId = null;
+  }
+  /**
+   * Invoke an agent through the broker with resilience.
+   *
+   * @param {object} opts
+   * @param {string} opts.agentName
+   * @param {string} opts.prompt
+   * @param {string} [opts.idempotencyKey]
+   * @param {string} [opts.model]
+   * @param {string} [opts.effort]
+   * @param {object} [opts.structuredSchema]
+   * @param {number} [opts.timeout]
+   * @param {function} [opts.onProgress]
+   * @param {string} [opts.resumeSessionId]
+   * @param {string} [opts.mode]
+   * @returns {Promise<import('../agents/base.mjs').InvokeResult>}
+   */
+  async invoke({ agentName, prompt, idempotencyKey, model, effort, structuredSchema, timeout = 5 * 6e4, onProgress, resumeSessionId, mode }) {
+    if (idempotencyKey && this.idempotencyCache.has(idempotencyKey)) {
+      const entry = this.idempotencyCache.get(idempotencyKey);
+      if (Date.now() - entry.t < this.idempotencyTtlMs) return entry.v;
+      this.idempotencyCache.delete(idempotencyKey);
+    }
+    const adapter = this.adapters.get(agentName);
+    if (!adapter) {
+      throw new Error(`Unknown agent: ${agentName}`);
+    }
+    const breaker = this.circuitBreakers.get(agentName);
+    if (!breaker.canExecute()) {
+      const error51 = `Circuit breaker open for ${agentName}`;
+      this.dlq.enqueue({ agentName, prompt, error: error51, reason: "circuit_breaker" });
+      this._emitAgent(agentName, "adapter_degraded", { agent_name: agentName, reason: "circuit_breaker" });
+      throw new Error(error51);
+    }
+    const queue = this.loadQueues.get(agentName);
+    const result = await queue.enqueue(async () => {
+      try {
+        const invokeResult = await adapter.invoke({
+          prompt,
+          model,
+          effort,
+          structuredSchema,
+          timeout,
+          onProgress,
+          resumeSessionId,
+          mode
+        });
+        breaker.recordSuccess();
+        this._emitAgent(agentName, "session_update", { agent_name: agentName, type: "completion", result: invokeResult });
+        if (idempotencyKey) {
+          if (this.idempotencyCache.size >= this.idempotencyMaxSize) {
+            const oldestKey = this.idempotencyCache.keys().next().value;
+            this.idempotencyCache.delete(oldestKey);
+          }
+          this.idempotencyCache.set(idempotencyKey, { v: invokeResult, t: Date.now() });
+        }
+        try {
+          emit({
+            type: "broker_invocation",
+            agent_name: agentName,
+            transport: invokeResult.transport,
+            queue_depth: queue.depth,
+            circuit_breaker_state: breaker.state
+          });
+        } catch {
+        }
+        return invokeResult;
+      } catch (err) {
+        breaker.recordFailure();
+        this.dlq.enqueue({ agentName, prompt, error: err.message, reason: "invocation_failure" });
+        this._emitAgent(agentName, "agent_error", { agent_name: agentName, error: err.message });
+        if (breaker.state === "open") {
+          this._emitAgent(agentName, "circuit_breaker_trip", { agent_name: agentName, failures: breaker.failures });
+        }
+        throw err;
+      }
+    });
+    return result;
+  }
+  /**
+   * Check availability of all registered adapters.
+   *
+   * @returns {Promise<Map<string, import('../agents/base.mjs').AvailabilityResult>>}
+   */
+  async checkAllAvailability() {
+    const results = /* @__PURE__ */ new Map();
+    for (const [name, adapter] of this.adapters) {
+      results.set(name, await adapter.checkAvailability());
+    }
+    return results;
+  }
+  /**
+   * Get the adapter for an agent name.
+   *
+   * @param {string} name
+   * @returns {import('../agents/base.mjs').AgentAdapter|undefined}
+   */
+  getAdapter(name) {
+    return this.adapters.get(name);
+  }
+  /**
+   * Emit an event on a per-agent channel.
+   *
+   * @param {string} agentName
+   * @param {string} event
+   * @param {object} payload
+   */
+  _emitAgent(agentName, event, payload) {
+    const agentEmitter = this.agents.get(agentName);
+    if (agentEmitter) {
+      agentEmitter.emit(event, payload);
+    }
+  }
+  /**
+   * Get DLQ contents.
+   */
+  getDlq() {
+    return this.dlq.drain();
+  }
+  /**
+   * Get circuit breaker state for an agent.
+   *
+   * @param {string} name
+   * @returns {string|undefined}
+   */
+  getCircuitBreakerState(name) {
+    const breaker = this.circuitBreakers.get(name);
+    return breaker?.state;
+  }
+  /**
+   * Get load queue depth for an agent.
+   *
+   * @param {string} name
+   * @returns {number}
+   */
+  getLoadQueueDepth(name) {
+    const queue = this.loadQueues.get(name);
+    return queue?.depth ?? 0;
+  }
+  /**
+   * Shutdown the broker.
+   */
+  async shutdown() {
+    await this.sessionEnd();
+    this.adapters.clear();
+    this.circuitBreakers.clear();
+    this.loadQueues.clear();
+    this.agents.clear();
+    this.idempotencyCache.clear();
+  }
+};
+function createBroker() {
+  const broker = new Broker();
+  broker.registerAdapter("claude", new ClaudeAdapter());
+  broker.registerAdapter("codex", new CodexAdapter());
+  broker.registerAdapter("opencode", new OpenCodeAdapter());
+  return broker;
+}
+
 // core/council.mjs
 import { mkdirSync as mkdirSync2, writeFileSync, readFileSync as readFileSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
 import { join as join2, dirname } from "node:path";
-import { spawn as spawn6 } from "node:child_process";
 var COUNCIL_POSITION_SCHEMA = JSON.parse(
   readFileSync2(new URL("./schemas/council-position.schema.json", import.meta.url), "utf8")
 );
@@ -17767,10 +18164,10 @@ function writeCheckpoint(slug, phase, round, members, generation = 1) {
     generation,
     timestamp: Date.now()
   };
-  writeFileSync(join2("debates", "council", slug, "council.json"), JSON.stringify(checkpoint, null, 2));
+  writeFileSync(join2(process.cwd(), "debates", "council", slug, "council.json"), JSON.stringify(checkpoint, null, 2));
 }
 function readCheckpoint(slug) {
-  const path = join2("debates", "council", slug, "council.json");
+  const path = join2(process.cwd(), "debates", "council", slug, "council.json");
   if (existsSync2(path)) {
     return JSON.parse(readFileSync2(path, "utf8"));
   }
@@ -17829,63 +18226,34 @@ End with your UPDATED POSITION.`
   }
   return topic;
 }
-async function invokeMember(name, binary, prompt, args = []) {
-  return new Promise((resolve) => {
-    const allArgs = [...args, prompt];
-    const proc = spawn6(binary, allArgs, { stdio: ["ignore", "pipe", "pipe"] });
-    const out = [];
-    const err = [];
-    const timer = setTimeout(() => {
-      proc.kill("SIGTERM");
-      resolve({ name, output: Buffer.concat(out).toString().trim(), error: "timeout", exitCode: 1 });
-    }, 3e4);
-    proc.stdout.on("data", (d) => out.push(d));
-    proc.stderr.on("data", (d) => err.push(d));
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        name,
-        output: Buffer.concat(out).toString().trim(),
-        error: Buffer.concat(err).toString().trim(),
-        exitCode: code ?? 1
-      });
+async function invokeMemberViaBroker(broker, name, prompt, { model, slug, phase, round } = {}) {
+  const timeoutMs = process.env.CHOREO_TEST_MODE ? 5e3 : 5 * 6e4;
+  try {
+    const result = await broker.invoke({
+      agentName: name,
+      prompt,
+      model: model && model !== "default" ? model : void 0,
+      timeout: timeoutMs,
+      idempotencyKey: slug ? `${slug}:${phase}:${name}:${round ?? 0}` : void 0
     });
-    proc.on("error", (e) => {
-      clearTimeout(timer);
-      resolve({ name, output: "", error: e.message, exitCode: 1 });
-    });
-  });
-}
-function getMemberInvocation(name, prompt) {
-  const entry = REGISTRY[name];
-  if (!entry) return null;
-  switch (name) {
-    case "claude":
-      return {
-        binary: entry.binary,
-        args: ["--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
-        parse: (s) => s
-      };
-    case "codex":
-      return {
-        binary: entry.binary,
-        args: ["exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"],
-        parse: (s) => s
-      };
-    case "opencode":
-      return {
-        binary: entry.binary,
-        args: ["run", "--dangerously-skip-permissions"],
-        parse: (s) => s
-      };
-    default:
-      return null;
+    return { name, output: result.output || "", error: result.error || "", exitCode: result.exitCode ?? 0 };
+  } catch (err) {
+    console.error(`[council] Member ${name} failed: ${err.message}`);
+    return { name, output: "", error: err.message, exitCode: 1 };
   }
 }
 async function runCouncil({ task, members = ["claude", "codex"], models = {}, claudeRole = "debater", rounds = 3, skipPreflight = false, nonInteractive = false, jsonMode = false }) {
+  if (process.env.CHOREO_TEST_MODELS) {
+    for (const pair of process.env.CHOREO_TEST_MODELS.split(",")) {
+      const [agent, model] = pair.split(":");
+      if (agent && model && !models[agent]) models[agent] = model;
+    }
+  }
   const slug = generateSlug(task);
   const baseDir = join2("debates", "council", slug);
   const rawDir = join2(baseDir, "raw");
+  const broker = createBroker();
+  await broker.sessionStart(slug);
   const checkpoint = readCheckpoint(slug);
   if (checkpoint && !nonInteractive) {
     console.log(`[council] Found interrupted council: ${slug} (phase ${checkpoint.phase})`);
@@ -17894,6 +18262,15 @@ async function runCouncil({ task, members = ["claude", "codex"], models = {}, cl
   ensureDir2(join2(rawDir, "phase-0-preflight"));
   ensureDir2(join2(rawDir, "phase-1-opening"));
   ensureDir2(join2(rawDir, "phase-3-validation"));
+  const validMembers = members.filter((m) => REGISTRY[m]);
+  if (validMembers.length === 0) {
+    throw new Error("No valid council members \u2014 all specified members are unknown");
+  }
+  if (validMembers.length < members.length) {
+    const skipped = members.filter((m) => !REGISTRY[m]);
+    console.error(`[council] Skipping unknown members: ${skipped.join(", ")}`);
+  }
+  members = validMembers;
   writeFileSync(join2(baseDir, "topic.md"), `# ${task}
 `);
   writeCheckpoint(slug, "frame", null, members);
@@ -17902,12 +18279,10 @@ async function runCouncil({ task, members = ["claude", "codex"], models = {}, cl
     writeCheckpoint(slug, "preflight", null, members);
     const questions = [];
     for (const member of members.filter((m) => m !== "claude")) {
-      const invocation = getMemberInvocation(member, "");
-      if (!invocation) continue;
       const scopingPrompt = `You are about to participate in a structured multi-model debate on: ${task}
 
 List 0 to 3 clarifying questions you would need answered before you can take a strong position. Format as a numbered list. If the topic is complete enough, respond with exactly: NO QUESTIONS.`;
-      const result = await invokeMember(member, invocation.binary, scopingPrompt, invocation.args);
+      const result = await invokeMemberViaBroker(broker, member, scopingPrompt, { model: models[member], slug, phase: "preflight", round: 0 });
       if (result.output && !result.output.includes("NO QUESTIONS")) {
         const qs = result.output.split("\n").filter((l) => l.match(/^\d+\./));
         questions.push(...qs.map((q) => q.replace(/^\d+\.\s*/, "")));
@@ -17923,10 +18298,8 @@ ${questions.map((q) => `- Q: ${q}
   writeCheckpoint(slug, "opening", null, members);
   const openings = {};
   const openingPromises = members.map(async (member) => {
-    const invocation = getMemberInvocation(member, "");
-    if (!invocation) return;
     const prompt = buildMemberPrompt(member, "opening", task, clarifications);
-    const result = await invokeMember(member, invocation.binary, prompt, invocation.args);
+    const result = await invokeMemberViaBroker(broker, member, prompt, { model: models[member], slug, phase: "opening", round: 0 });
     openings[member] = result.output;
     const model = models[member] || "default";
     writeWithFrontmatter(join2(rawDir, "phase-1-opening", `${member}.md`), member, model, "opening", result.exitCode, result.output);
@@ -17945,19 +18318,20 @@ ${questions.map((q) => `- Q: ${q}
     ensureDir2(roundDir);
     const rebuttals = {};
     const rebuttalPromises = members.map(async (member) => {
-      const invocation = getMemberInvocation(member, "");
-      if (!invocation) return;
       const prompt = buildMemberPrompt(member, "rebuttal", task, clarifications, positions);
-      const result = await invokeMember(member, invocation.binary, prompt, invocation.args);
+      const result = await invokeMemberViaBroker(broker, member, prompt, { model: models[member], slug, phase: "rebuttal", round });
       rebuttals[member] = result.output;
       const model = models[member] || "default";
       writeWithFrontmatter(join2(roundDir, `${member}.md`), member, model, `rebuttal-round-${round}`, result.exitCode, result.output);
     });
     await Promise.all(rebuttalPromises);
     positions = { ...positions, ...rebuttals };
-    const outputs = Object.values(rebuttals);
+    const outputs = Object.values(rebuttals).filter((o) => o.length > 0 && !o.startsWith("timeout") && !o.startsWith("[error"));
     if (outputs.length >= 2 && outputs.every((o) => o.length < 50)) {
-      break;
+      const unique = new Set(outputs.map((o) => o.trim().toLowerCase()));
+      if (unique.size === 1) {
+        break;
+      }
     }
   }
   writeCheckpoint(slug, "synthesis", null, members);
@@ -17982,18 +18356,15 @@ Produce:
 `,
     `5. Confidence: FULL CONSENSUS / PARTIAL CONSENSUS / DEADLOCK`
   ].join("\n");
-  const synthesisInvocation = getMemberInvocation("claude", "");
   let synthesis = "";
-  if (synthesisInvocation) {
-    const result = await invokeMember("claude", synthesisInvocation.binary, synthesisPrompt, synthesisInvocation.args);
+  {
+    const result = await invokeMemberViaBroker(broker, "claude", synthesisPrompt, { model: models["claude"], slug, phase: "synthesis", round: 0 });
     synthesis = result.output;
   }
   const parsedSynthesis = parseStructuredOutput(synthesis, COUNCIL_SYNTHESIS_SCHEMA);
   const confidence = parsedSynthesis?.confidence || "PARTIAL CONSENSUS";
   const validations = {};
   const validationPromises = members.filter((m) => m !== "claude").map(async (member) => {
-    const invocation = getMemberInvocation(member, "");
-    if (!invocation) return;
     const valPrompt = [
       `SYNTHESIS VALIDATION
 
@@ -18011,7 +18382,7 @@ ${positions[member]}
 `,
       `Rate your agreement: FULL CONSENSUS / PARTIAL CONSENSUS / DEADLOCK`
     ].join("");
-    const result = await invokeMember(member, invocation.binary, valPrompt, invocation.args);
+    const result = await invokeMemberViaBroker(broker, member, valPrompt, { model: models[member], slug, phase: "validation", round: 0 });
     validations[member] = result.output;
     writeWithFrontmatter(join2(rawDir, "phase-3-validation", `${member}.md`), member, models[member] || "default", "validation", result.exitCode, result.output);
   });
@@ -18060,6 +18431,7 @@ See debates/council/${slug}/raw/`
     }
   } catch {
   }
+  await broker.shutdown();
   try {
     emit({
       type: "council_complete",
@@ -18188,7 +18560,7 @@ function initGoalsFromPlan(rootDir, planPath) {
     if (inCriteria && line.trim().startsWith("-")) {
       criteria.push(line.trim().slice(1).trim());
     }
-    if (inCriteria && line.trim() === "") {
+    if (inCriteria && /^#{1,3}\s/.test(line.trim())) {
       inCriteria = false;
     }
   }
@@ -18210,12 +18582,149 @@ import { readFileSync as readFileSync4, writeFileSync as writeFileSync3, mkdirSy
 import { join as join4, dirname as dirname3 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { randomUUID } from "node:crypto";
+
+// core/verifier/sanitizer.mjs
+var MAX_LENGTH = 2048;
+var INSTRUCTION_PATTERNS = [
+  /^(please|you should|you must|make sure|ensure that|don't forget|remember to)\b/i,
+  /^(fix|change|update|modify|remove|add|delete|rewrite|refactor)\s+(the|this|your)\b/i,
+  /^(i recommend|i suggest|consider|try to)\b/i,
+  /^(go to|navigate to|open|edit|create)\s+\S+\s+and\b/i
+];
+function sanitizeFeedback(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let text = raw.trim();
+  const lines = text.split("\n");
+  const safeLines = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    if (INSTRUCTION_PATTERNS.some((p) => p.test(trimmed))) return false;
+    return true;
+  });
+  text = safeLines.join("\n").trim();
+  if (text.length > MAX_LENGTH) {
+    text = text.slice(0, MAX_LENGTH - 3) + "...";
+  }
+  return text || null;
+}
+
+// core/verifier/composer.mjs
+async function composeVerifiers({ verifiers, builderRunId, round }) {
+  const reports = [];
+  const conflicts = [];
+  const resolved = /* @__PURE__ */ new Set();
+  const running = /* @__PURE__ */ new Map();
+  async function runVerifier(verifierDef) {
+    if (resolved.has(verifierDef.id)) return;
+    if (running.has(verifierDef.id)) return running.get(verifierDef.id);
+    const promise2 = (async () => {
+      const deps = verifierDef.depends_on || [];
+      await Promise.all(deps.map((depId) => {
+        const dep = verifiers.find((v) => v.id === depId);
+        if (!dep) throw new Error(`Unknown dependency: ${depId}`);
+        return runVerifier(dep);
+      }));
+      const result = await verifierDef.run();
+      resolved.add(verifierDef.id);
+      reports.push({ verifier_id: verifierDef.id, ...result });
+      return result;
+    })();
+    running.set(verifierDef.id, promise2);
+    return promise2;
+  }
+  await Promise.all(verifiers.map((v) => runVerifier(v)));
+  const claimVerdicts = /* @__PURE__ */ new Map();
+  for (const report of reports) {
+    for (const claim of report.verified_claims || []) {
+      if (!claimVerdicts.has(claim.id)) claimVerdicts.set(claim.id, []);
+      claimVerdicts.get(claim.id).push({ verifier_id: report.verifier_id, verdict: "verified" });
+    }
+    for (const claim of report.failed_claims || []) {
+      if (!claimVerdicts.has(claim.id)) claimVerdicts.set(claim.id, []);
+      claimVerdicts.get(claim.id).push({ verifier_id: report.verifier_id, verdict: "failed" });
+    }
+  }
+  for (const [claimId, verdicts] of claimVerdicts) {
+    const uniqueVerdicts = new Set(verdicts.map((v) => v.verdict));
+    if (uniqueVerdicts.size > 1) {
+      conflicts.push({
+        claim_id: claimId,
+        verdicts,
+        reason: "conflict"
+      });
+    }
+  }
+  const composite = buildComposite(reports, conflicts, builderRunId, round);
+  return { reports, composite, conflicts };
+}
+function buildComposite(reports, conflicts, builderRunId, round) {
+  const allVerified = [];
+  const allFailed = [];
+  const allCouldntVerify = [];
+  const allScriptOutputs = [];
+  let anyImprovementNeeded = null;
+  let anyFeedback = null;
+  let hasError = false;
+  let hasFailure = false;
+  for (const report of reports) {
+    allVerified.push(...report.verified_claims || []);
+    allFailed.push(...report.failed_claims || []);
+    allCouldntVerify.push(...report.couldnt_verify || []);
+    allScriptOutputs.push(...report.script_outputs || []);
+    if (report.improvement_needed && !anyImprovementNeeded) {
+      anyImprovementNeeded = report.improvement_needed;
+    }
+    if (report.feedback_given && !anyFeedback) {
+      anyFeedback = report.feedback_given;
+    }
+    if (report.status === "error") hasError = true;
+    if (report.status === "fail") hasFailure = true;
+  }
+  for (const conflict of conflicts) {
+    allCouldntVerify.push({
+      id: conflict.claim_id,
+      claim: `Conflict on claim ${conflict.claim_id}`,
+      reason: "conflict",
+      needed: "user resolution"
+    });
+  }
+  let status = "pass";
+  if (hasError) status = "error";
+  else if (hasFailure || allFailed.length > 0) status = "fail";
+  else if (anyImprovementNeeded) status = "feedback";
+  return {
+    verifier_id: "composite",
+    builder_run_id: builderRunId,
+    round,
+    status,
+    confidence: computeCompositeConfidence(reports),
+    verified_claims: allVerified,
+    failed_claims: allFailed,
+    couldnt_verify: allCouldntVerify,
+    feedback_given: sanitizeFeedback(anyFeedback),
+    improvement_needed: anyImprovementNeeded,
+    script_outputs: allScriptOutputs,
+    verifier_count: reports.length,
+    conflicts
+  };
+}
+function computeCompositeConfidence(reports) {
+  if (reports.length === 0) return 0;
+  const sum = reports.reduce((acc, r) => acc + (r.confidence || 0), 0);
+  return Math.round(sum / reports.length * 100) / 100;
+}
+
+// core/verifier/loop.mjs
 var __dirname2 = dirname3(fileURLToPath2(import.meta.url));
 var VERIFIER_REPORT_SCHEMA = JSON.parse(
   readFileSync4(join4(__dirname2, "../schemas/verifier-report.schema.json"), "utf8")
 );
 var DEFAULT_MAX_ROUNDS = 3;
 var VERIFIER_DIR2 = ".choreographer/verifier";
+function yamlValue(line) {
+  const idx = line.indexOf(":");
+  return idx >= 0 ? line.slice(idx + 1).trim() : "";
+}
 function loadVerifierConfig(rootDir) {
   const configPath = join4(rootDir, ".choreographer", "verifiers.yaml");
   if (!existsSync4(configPath)) return [];
@@ -18227,18 +18736,20 @@ function loadVerifierConfig(rootDir) {
     if (!trimmed || trimmed.startsWith("#")) continue;
     if (trimmed.startsWith("- id:")) {
       if (current) verifiers.push(current);
-      current = { id: trimmed.split(":")[1].trim(), depends_on: [], sandbox: {} };
+      current = { id: yamlValue(trimmed), depends_on: [], sandbox: {} };
     } else if (current && trimmed.startsWith("depends_on:")) {
-      const val = trimmed.split(":")[1]?.trim();
+      const val = yamlValue(trimmed);
       current.depends_on = val === "[]" ? [] : (val || "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
     } else if (current && trimmed.startsWith("max_rounds:")) {
-      current.max_rounds = parseInt(trimmed.split(":")[1].trim(), 10) || DEFAULT_MAX_ROUNDS;
+      current.max_rounds = parseInt(yamlValue(trimmed), 10) || DEFAULT_MAX_ROUNDS;
     } else if (current && trimmed.startsWith("description:")) {
-      current.description = trimmed.split(":").slice(1).join(":").trim().replace(/^["']|["']$/g, "");
+      current.description = yamlValue(trimmed).replace(/^["']|["']$/g, "");
     } else if (current && trimmed.startsWith("allowed_script:")) {
-      current.allowed_script = trimmed.split(":")[1].trim();
+      current.allowed_script = yamlValue(trimmed);
+    } else if (current && trimmed.startsWith("model:")) {
+      current.model = yamlValue(trimmed);
     } else if (current && trimmed.startsWith("triggers:")) {
-      const val = trimmed.split(":")[1]?.trim();
+      const val = yamlValue(trimmed);
       current.triggers = val === "[]" ? [] : (val || "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
     }
   }
@@ -18253,6 +18764,72 @@ function loadVerifierConfig(rootDir) {
   }
   return verifiers;
 }
+async function runVerifierLoop({
+  rootDir,
+  builderRunId,
+  verifiers,
+  runVerifier,
+  maxRounds = DEFAULT_MAX_ROUNDS,
+  autonomous = false,
+  onEscalation,
+  onRoundComplete
+}) {
+  if (!verifiers || verifiers.length === 0) {
+    return { converged: true, rounds: 0, composite: null };
+  }
+  let previousFailedClaims = null;
+  let composite = null;
+  for (let round = 1; round <= maxRounds; round++) {
+    const verifierRuns = verifiers.map((v) => ({
+      id: v.id,
+      depends_on: v.depends_on || [],
+      run: () => runVerifier(v, builderRunId, round)
+    }));
+    const { reports, composite: roundComposite, conflicts } = await composeVerifiers({
+      verifiers: verifierRuns,
+      builderRunId,
+      round
+    });
+    composite = roundComposite;
+    for (const report of reports) {
+      writeFeedbackFile(rootDir, report.verifier_id, round, report);
+    }
+    if (onRoundComplete) {
+      onRoundComplete(round, composite);
+    }
+    const converged = composite.failed_claims.length === 0 && !composite.improvement_needed;
+    if (converged) {
+      return { converged: true, rounds: round, composite };
+    }
+    const currentFailedSet = JSON.stringify(composite.failed_claims.map((c) => c.id).sort());
+    if (previousFailedClaims !== null && currentFailedSet === previousFailedClaims) {
+      if (onEscalation) {
+        onEscalation("oscillation", { round, failed_claims: composite.failed_claims });
+      }
+      if (autonomous) {
+        return { converged: false, rounds: round, composite, escalated: "oscillation" };
+      }
+      return { converged: false, rounds: round, composite, escalated: "oscillation" };
+    }
+    previousFailedClaims = currentFailedSet;
+    if (conflicts.length > 0 && autonomous) {
+      if (onEscalation) {
+        onEscalation("critical-fork", { round, conflicts });
+      }
+      return { converged: false, rounds: round, composite, escalated: "critical-fork" };
+    }
+  }
+  if (onEscalation) {
+    onEscalation("round-cap", { rounds: maxRounds, composite });
+  }
+  return { converged: false, rounds: maxRounds, composite, escalated: "round-cap" };
+}
+function writeFeedbackFile(rootDir, verifierId, round, report) {
+  const dir = join4(rootDir, VERIFIER_DIR2, verifierId);
+  if (!existsSync4(dir)) mkdirSync4(dir, { recursive: true });
+  const filePath = join4(dir, `feedback-round-${round}.json`);
+  writeFileSync3(filePath, JSON.stringify(report, null, 2), "utf8");
+}
 function checkPendingFeedback(rootDir) {
   const results = [];
   const verifierRoot = join4(rootDir, VERIFIER_DIR2);
@@ -18261,8 +18838,10 @@ function checkPendingFeedback(rootDir) {
     const dir = join4(verifierRoot, verifierId);
     const files = readdirSync3(dir).filter((f) => f.startsWith("feedback-round-") && f.endsWith(".json"));
     if (files.length === 0) continue;
-    const latest = files.sort().pop();
-    const round = parseInt(latest.replace("feedback-round-", "").replace(".json", ""), 10);
+    const parsed = files.map((f) => ({ file: f, round: parseInt(f.replace("feedback-round-", "").replace(".json", ""), 10) })).filter((x) => !isNaN(x.round)).sort((a, b) => a.round - b.round).pop();
+    if (!parsed) continue;
+    const latest = parsed.file;
+    const round = parsed.round;
     const content = readFileSync4(join4(dir, latest), "utf8");
     const report = JSON.parse(content);
     results.push({ verifier_id: verifierId, round, report });
@@ -18483,7 +19062,7 @@ function collectReviewContext(cwd, target, options = {}) {
   if (target.mode === "working-tree") {
     const state = getWorkingTreeState(repoRoot);
     const stagedBytes = measureGitOutputBytes(repoRoot, ["diff", "--cached", "--no-ext-diff", "--submodule=diff"], maxInlineDiffBytes);
-    const unstagedBytes = measureGitOutputBytes(repoRoot, ["diff", "--no-ext-diff", "--submodule=diff"], maxInlineDiffBytes - stagedBytes);
+    const unstagedBytes = measureGitOutputBytes(repoRoot, ["diff", "--no-ext-diff", "--submodule=diff"], Math.max(0, maxInlineDiffBytes - stagedBytes));
     diffBytes = stagedBytes + unstagedBytes;
     includeDiff = options.includeDiff ?? ([...state.staged, ...state.unstaged, ...state.untracked].filter(Boolean).length <= maxInlineFiles && diffBytes <= maxInlineDiffBytes);
     details = collectWorkingTreeContext(repoRoot, state, { includeDiff });
@@ -18716,34 +19295,6 @@ if (fileURLToPath3(import.meta.url) === process.argv[1]) {
       console.error(`Agent "${name}" is not installed. Run: ${entry.setup}`);
       process.exit(1);
     }
-    let args;
-    let parse3 = (s) => s;
-    switch (name) {
-      case "claude": {
-        const claudeArgs = ["--print", "--output-format", "stream-json", "--verbose", task, "--dangerously-skip-permissions"];
-        if (modelEquals) claudeArgs.splice(0, 0, "--model", modelEquals);
-        args = claudeArgs;
-        parse3 = parseClaudeStreamJson;
-        break;
-      }
-      case "codex": {
-        const codexArgs = ["exec", task];
-        if (effortEquals) codexArgs.splice(0, 0, "--effort", effortEquals);
-        if (modelEquals) codexArgs.splice(0, 0, "--model", modelEquals);
-        args = codexArgs;
-        break;
-      }
-      case "opencode": {
-        const opencodeArgs = ["run", task, "--dangerously-skip-permissions"];
-        if (modelEquals) opencodeArgs.splice(1, 0, "--model", modelEquals);
-        args = opencodeArgs;
-        parse3 = parseOpenCodeOutput;
-        break;
-      }
-      default:
-        console.error(`Agent "${name}" not supported.`);
-        process.exit(1);
-    }
     try {
       emit({
         type: "agent_invocation",
@@ -18756,75 +19307,49 @@ if (fileURLToPath3(import.meta.url) === process.argv[1]) {
       });
     } catch {
     }
-    const transportFlag = rest.find((a) => a.startsWith("--transport="))?.split("=")[1];
-    const useAdapter = transportFlag === "acp" && entry.adapter;
-    if (useAdapter && availability.transport) {
-      const result2 = await entry.adapter.invoke({
+    const broker = createBroker();
+    await broker.sessionStart(`agent-${Date.now()}`);
+    try {
+      const result = await broker.invoke({
+        agentName: name,
         prompt: task,
         model: modelEquals,
         effort: effortEquals,
-        resumeSessionId: resumeEquals,
-        mode: modeEquals
+        timeout: 5 * 6e4,
+        idempotencyKey: `agent:${name}:${Date.now()}`,
+        mode: modeEquals,
+        resumeSessionId: resumeEquals
       });
+      const output = result.output || "";
+      const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
       if (jsonMode) {
-        printJSON("agent", [{ name, output: result2.output, error: result2.error, exitCode: result2.exitCode ?? 0 }]);
+        printJSON("agent", [{ name, output, error: result.error || "", code: exitCode }]);
       } else {
         console.log(`
 ${"\u2550".repeat(60)}`);
-        console.log(`AGENT: ${result2.name ?? name.toUpperCase()}`);
+        console.log(`AGENT: ${name.toUpperCase()}`);
         console.log("\u2550".repeat(60));
-        if (result2.exitCode !== 0 && !result2.output) {
-          console.log(`[error \u2014 exit ${result2.exitCode}]`);
-          if (result2.error) console.log(result2.error);
+        if (exitCode !== 0 && !output) {
+          console.log(`[error \u2014 exit ${exitCode}]`);
+          if (result.error) console.log(result.error);
         } else {
-          console.log(result2.output || result2.error || "[no output]");
+          console.log(output || result.error || "[no output]");
         }
         console.log(`
 ${"\u2550".repeat(60)}`);
       }
       try {
-        emit({
-          type: "agent_completion",
-          name,
-          exitCode: result2.exitCode ?? 0,
-          hasError: !!result2.error,
-          transport: result2.transport
-        });
+        emit({ type: "agent_completion", name, exitCode, hasError: !!result.error, transport: result.transport });
       } catch {
       }
-      const exitCode2 = typeof result2.exitCode === "number" ? result2.exitCode : 1;
       await new Promise((resolve) => process.stdout.write("", resolve));
-      process.exit(exitCode2);
+      process.exit(exitCode);
+    } catch (err) {
+      console.error(`Agent "${name}" failed: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
-    const result = await runAgent(name, entry.binary, args, parse3);
-    if (jsonMode) {
-      printJSON("agent", [result]);
-    } else {
-      console.log(`
-${"\u2550".repeat(60)}`);
-      console.log(`AGENT: ${result.name.toUpperCase()}`);
-      console.log("\u2550".repeat(60));
-      if (result.code !== 0 && !result.output) {
-        console.log(`[error \u2014 exit ${result.code}]`);
-        if (result.error) console.log(result.error);
-      } else {
-        console.log(result.output || result.error || "[no output]");
-      }
-      console.log(`
-${"\u2550".repeat(60)}`);
-    }
-    try {
-      emit({
-        type: "agent_completion",
-        name,
-        exitCode: result.code,
-        hasError: !!result.error
-      });
-    } catch {
-    }
-    const exitCode = typeof result.code === "number" ? result.code : 1;
-    await new Promise((resolve) => process.stdout.write("", resolve));
-    process.exit(exitCode);
   }
   if (cmd === "council") {
     const jsonMode = rest.includes("--json");
@@ -18900,60 +19425,38 @@ Launching council...`);
       process.exit(1);
     }
     const diff = gitResult.stdout?.trim() || "No uncommitted changes found.";
-    const agents = [
-      {
-        name: "claude",
-        binary: REGISTRY.claude.binary,
-        args: [
-          "--print",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          `Review the following code changes for CORRECTNESS AND SECURITY.
+    const prompts = [
+      { name: "claude", prompt: `Review the following code changes for CORRECTNESS AND SECURITY.
 Focus on: bugs, logic errors, security vulnerabilities, unsafe patterns.
 Be concise \u2014 numbered findings.
 
-${diff}`,
-          "--dangerously-skip-permissions"
-        ],
-        parse: parseClaudeStreamJson
-      },
-      {
-        name: "codex",
-        binary: REGISTRY.codex.binary,
-        args: [
-          "exec",
-          `Review the following code changes for SCOPE AND SIMPLICITY.
+${diff}` },
+      { name: "codex", prompt: `Review the following code changes for SCOPE AND SIMPLICITY.
 Focus on: unnecessary complexity, changes that exceed the stated goal, simpler alternatives.
 Be concise \u2014 numbered findings.
 
-${diff}`
-        ]
-      },
-      {
-        name: "opencode",
-        binary: REGISTRY.opencode.binary,
-        args: [
-          "run",
-          `Review the following code changes for EDGE CASES AND ROBUSTNESS.
+${diff}` },
+      { name: "opencode", prompt: `Review the following code changes for EDGE CASES AND ROBUSTNESS.
 Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.
 Be concise \u2014 numbered findings.
 
-${diff}`,
-          "--dangerously-skip-permissions"
-        ],
-        parse: parseOpenCodeOutput
-      }
+${diff}` }
     ];
-    let available;
+    const broker = createBroker();
+    await broker.sessionStart(`review-${Date.now()}`);
     try {
-      available = requireAvailable(agents, 2);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(1);
+      const results = await Promise.all(prompts.map(async (p) => {
+        try {
+          const r = await broker.invoke({ agentName: p.name, prompt: p.prompt, timeout: 5 * 6e4 });
+          return { name: p.name, output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name: p.name, output: "", error: err.message, code: 1 };
+        }
+      }));
+      jsonMode ? printJSON("review", results) : printDelimited(results);
+    } finally {
+      await broker.shutdown();
     }
-    const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
-    jsonMode ? printJSON("review", results) : printDelimited(results);
   }
   if (cmd === "debug") {
     const jsonMode = rest.includes("--json");
@@ -18962,43 +19465,36 @@ ${diff}`,
       console.error("Usage: companion.mjs debug <symptom>");
       process.exit(1);
     }
-    const prompt = (focus) => `A software bug has been reported. Generate a ranked list of hypotheses for the root cause.
+    const availableAgents = Object.entries(REGISTRY).filter(([, e]) => checkCli(e.binary).status === "ok").map(([n]) => n);
+    if (availableAgents.length < 2) {
+      console.error("Not enough agents available (need at least 2 for debug). Install: /choreo:claude, /choreo:codex, /choreo:opencode");
+      process.exit(1);
+    }
+    const makePrompt = (focus) => `A software bug has been reported. Generate a ranked list of hypotheses for the root cause.
 Focus area: ${focus}.
 Format: numbered list, most likely first, one sentence per hypothesis.
 
 Symptom: ${symptom}`;
-    const agents = [
-      {
-        name: "claude",
-        binary: REGISTRY.claude.binary,
-        args: ["--print", "--output-format", "stream-json", "--verbose", prompt("application logic, state management, data flow"), "--dangerously-skip-permissions"],
-        parse: parseClaudeStreamJson
-      },
-      {
-        name: "codex",
-        binary: REGISTRY.codex.binary,
-        args: ["exec", prompt("edge cases in input handling, off-by-one errors, type coercion")]
-      },
-      {
-        name: "opencode",
-        binary: REGISTRY.opencode.binary,
-        args: [
-          "run",
-          prompt("infrastructure, concurrency, external dependencies, environment"),
-          "--dangerously-skip-permissions"
-        ],
-        parse: parseOpenCodeOutput
-      }
+    const prompts = [
+      { name: "claude", prompt: makePrompt("application logic, state management, data flow") },
+      { name: "codex", prompt: makePrompt("edge cases in input handling, off-by-one errors, type coercion") },
+      { name: "opencode", prompt: makePrompt("infrastructure, concurrency, external dependencies, environment") }
     ];
-    let available;
+    const broker = createBroker();
+    await broker.sessionStart(`debug-${Date.now()}`);
     try {
-      available = requireAvailable(agents, 2);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(1);
+      const results = await Promise.all(prompts.map(async (p) => {
+        try {
+          const r = await broker.invoke({ agentName: p.name, prompt: p.prompt, timeout: 5 * 6e4 });
+          return { name: p.name, output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name: p.name, output: "", error: err.message, code: 1 };
+        }
+      }));
+      jsonMode ? printJSON("debug", results) : printDelimited(results);
+    } finally {
+      await broker.shutdown();
     }
-    const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
-    jsonMode ? printJSON("debug", results) : printDelimited(results);
   }
   if (cmd === "second-opinion") {
     const jsonMode = rest.includes("--json");
@@ -19015,52 +19511,46 @@ Symptom: ${symptom}`;
 Be direct: state what you agree with, what concerns you, and your overall verdict (approve / approve-with-caveats / reject).
 
 ${task}`;
-    const agentDefs = {
-      claude: { binary: REGISTRY.claude.binary, run: () => runAgent("claude", REGISTRY.claude.binary, ["--print", "--output-format", "stream-json", "--verbose", prompt, "--dangerously-skip-permissions"], parseClaudeStreamJson) },
-      codex: { binary: REGISTRY.codex.binary, run: () => runAgent("codex", REGISTRY.codex.binary, ["exec", prompt]) },
-      opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent("opencode", REGISTRY.opencode.binary, ["run", prompt, "--dangerously-skip-permissions"], parseOpenCodeOutput) }
-    };
-    if (requestedAgent && !agentDefs[requestedAgent]) {
-      console.error(`Unknown agent: "${requestedAgent}". Choose from: ${Object.keys(agentDefs).join(", ")}`);
+    const validAgents = Object.keys(REGISTRY);
+    let chosenAgent = requestedAgent ?? "claude";
+    if (requestedAgent && !validAgents.includes(requestedAgent)) {
+      console.error(`Unknown agent: "${requestedAgent}". Choose from: ${validAgents.join(", ")}`);
       process.exit(1);
     }
-    const defaultOrder = ["claude", "codex", "opencode"];
-    let chosenAgent = requestedAgent ?? "claude";
-    if (checkCli(agentDefs[chosenAgent].binary).status !== "ok") {
-      const fallback = (requestedAgent ? Object.keys(agentDefs) : defaultOrder).find((n) => n !== chosenAgent && checkCli(agentDefs[n].binary).status === "ok");
+    if (checkCli(REGISTRY[chosenAgent].binary).status !== "ok") {
+      const fallback = validAgents.find((n) => n !== chosenAgent && checkCli(REGISTRY[n].binary).status === "ok");
       if (!fallback) {
         console.error(`Agent "${chosenAgent}" not found and no alternatives are available.`);
-        console.error(`Install at least one agent: ${Object.keys(agentDefs).map((n) => `${REGISTRY[n].setup}`).join(", ")}`);
+        console.error(`Install at least one agent: ${Object.keys(REGISTRY).map((n) => `${REGISTRY[n].setup}`).join(", ")}`);
         process.exit(1);
       }
       console.error(`\u26A0 Agent "${chosenAgent}" not found \u2014 using "${fallback}" instead.`);
-      if (requestedAgent) {
-        console.error(`  Install ${chosenAgent}: ${REGISTRY[chosenAgent].setup}`);
-      }
       chosenAgent = fallback;
     }
-    const result = await agentDefs[chosenAgent].run();
-    if (jsonMode) {
-      printJSON("second-opinion", [result]);
-    } else {
-      console.log(`
+    const broker = createBroker();
+    await broker.sessionStart(`second-opinion-${Date.now()}`);
+    try {
+      const r = await broker.invoke({ agentName: chosenAgent, prompt, timeout: 5 * 6e4 });
+      const result = { name: chosenAgent, output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+      if (jsonMode) {
+        printJSON("second-opinion", [result]);
+      } else {
+        console.log(`
 ${"\u2550".repeat(60)}`);
-      console.log(`SECOND OPINION: ${result.name.toUpperCase()}`);
-      console.log("\u2550".repeat(60));
-      console.log(result.output || result.error || "[no output]");
-      console.log(`
+        console.log(`SECOND OPINION: ${chosenAgent.toUpperCase()}`);
+        console.log("\u2550".repeat(60));
+        console.log(result.output || result.error || "[no output]");
+        console.log(`
 ${"\u2550".repeat(60)}`);
+      }
+    } catch (err) {
+      console.error(`Second opinion failed: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
   }
   if (cmd === "vote") {
-    let parseVote = function(text) {
-      const line = (text || "").split("\n").find((l) => l.trim().length > 0) || "";
-      const clean = line.replace(/[*_`]/g, "").trim().toUpperCase();
-      if (/^YES\b/.test(clean)) return { vote: "YES", rationale: line.replace(/^yes[^a-z]*/i, "").trim() };
-      if (/^NO\b/.test(clean)) return { vote: "NO", rationale: line.replace(/^no[^a-z]*/i, "").trim() };
-      if (/^ABSTAIN\b/.test(clean)) return { vote: "ABSTAIN", rationale: line.replace(/^abstain[^a-z]*/i, "").trim() };
-      return { vote: "INVALID", rationale: line };
-    };
     const jsonMode = rest.includes("--json");
     const task = stripFlags(rest).join(" ").trim();
     if (!task) {
@@ -19070,71 +19560,67 @@ ${"\u2550".repeat(60)}`);
     const prompt = `Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), followed by one sentence of rationale. No other text.
 
 Proposition: ${task}`;
-    const agents = [
-      {
-        name: "claude",
-        binary: REGISTRY.claude.binary,
-        args: ["--print", "--output-format", "stream-json", "--verbose", prompt, "--dangerously-skip-permissions"],
-        parse: parseClaudeStreamJson
-      },
-      {
-        name: "codex",
-        binary: REGISTRY.codex.binary,
-        args: ["exec", prompt]
-      },
-      {
-        name: "opencode",
-        binary: REGISTRY.opencode.binary,
-        args: ["run", prompt, "--dangerously-skip-permissions"],
-        parse: parseOpenCodeOutput
-      }
-    ];
-    let available;
+    const agentNames = ["claude", "codex", "opencode"];
+    const broker = createBroker();
+    await broker.sessionStart(`vote-${Date.now()}`);
     try {
-      available = requireAvailable(agents, 2);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(1);
-    }
-    const results = await Promise.all(available.map((a) => runAgent(a.name, a.binary, a.args, a.parse)));
-    const tally = { yes: 0, no: 0, abstain: 0, invalid: 0 };
-    const parsed = results.map((r) => {
-      const { vote, rationale } = parseVote(r.output);
-      tally[vote.toLowerCase()]++;
-      return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
-    });
-    if (tally.invalid === parsed.length) {
-      const msg = "All agent votes were INVALID \u2014 no valid tally produced.";
-      if (jsonMode) {
-        console.log(JSON.stringify({ command: "vote", error: msg, tally, results: parsed }));
-      } else {
-        console.error(msg);
+      let parseVote = function(text) {
+        const line = (text || "").split("\n").find((l) => l.trim().length > 0) || "";
+        const clean = line.replace(/[*_`]/g, "").trim().toUpperCase();
+        if (/^YES\b/.test(clean)) return { vote: "YES", rationale: line.replace(/^yes[^a-z]*/i, "").trim() };
+        if (/^NO\b/.test(clean)) return { vote: "NO", rationale: line.replace(/^no[^a-z]*/i, "").trim() };
+        if (/^ABSTAIN\b/.test(clean)) return { vote: "ABSTAIN", rationale: line.replace(/^abstain[^a-z]*/i, "").trim() };
+        return { vote: "INVALID", rationale: line };
+      };
+      const results = await Promise.all(agentNames.map(async (name) => {
+        try {
+          const r = await broker.invoke({ agentName: name, prompt, timeout: 5 * 6e4 });
+          return { name, output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name, output: "", error: err.message, code: 1 };
+        }
+      }));
+      const tally = { yes: 0, no: 0, abstain: 0, invalid: 0 };
+      const parsed = results.map((r) => {
+        const { vote, rationale } = parseVote(r.output);
+        tally[vote.toLowerCase()]++;
+        return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
+      });
+      if (tally.invalid === parsed.length) {
+        const msg = "All agent votes were INVALID \u2014 no valid tally produced.";
+        if (jsonMode) {
+          console.log(JSON.stringify({ command: "vote", error: msg, tally, results: parsed }));
+        } else {
+          console.error(msg);
+        }
+        process.exit(1);
       }
-      process.exit(1);
-    }
-    if (jsonMode) {
-      console.log(JSON.stringify({ command: "vote", tally, results: parsed }));
-    } else {
-      const tallyLines = [
-        `| Vote    | Count |`,
-        `|---------|-------|`,
-        `| YES     | ${tally.yes}     |`,
-        `| NO      | ${tally.no}     |`,
-        `| ABSTAIN | ${tally.abstain}     |`,
-        tally.invalid > 0 ? `| INVALID | ${tally.invalid}     |` : null
-      ].filter(Boolean).join("\n");
-      console.log("\n## Vote Tally\n");
-      console.log(tallyLines);
-      console.log("\n## Per-Agent Rationale\n");
-      for (const r of parsed) {
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: "vote", tally, results: parsed }));
+      } else {
+        const tallyLines = [
+          `| Vote    | Count |`,
+          `|---------|-------|`,
+          `| YES     | ${tally.yes}     |`,
+          `| NO      | ${tally.no}     |`,
+          `| ABSTAIN | ${tally.abstain}     |`,
+          tally.invalid > 0 ? `| INVALID | ${tally.invalid}     |` : null
+        ].filter(Boolean).join("\n");
+        console.log("\n## Vote Tally\n");
+        console.log(tallyLines);
+        console.log("\n## Per-Agent Rationale\n");
+        for (const r of parsed) {
+          console.log(`
+${"\u2550".repeat(60)}`);
+          console.log(`${r.name.toUpperCase()}: ${r.vote}`);
+          console.log("\u2550".repeat(60));
+          console.log(r.rationale || r.output || "[no output]");
+        }
         console.log(`
 ${"\u2550".repeat(60)}`);
-        console.log(`${r.name.toUpperCase()}: ${r.vote}`);
-        console.log("\u2550".repeat(60));
-        console.log(r.rationale || r.output || "[no output]");
       }
-      console.log(`
-${"\u2550".repeat(60)}`);
+    } finally {
+      await broker.shutdown();
     }
   }
   if (cmd === "goals") {
@@ -19188,13 +19674,60 @@ ${"\u2550".repeat(60)}`);
         console.log(`  - ${p.verifier_id} (round ${p.round})`);
       }
     }
-    console.log(`[verify] Running ${verifiers.length} verifier(s), max ${maxRounds} round(s)`);
-    if (autonomous) console.log("[verify] Autonomous mode enabled");
-    console.log("[verify] Verifier loop execution requires broker integration (Ship 4 in progress)");
-    if (jsonMode) {
-      console.log(JSON.stringify({ command: "verify", verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+    const { randomUUID: randomUUID2 } = await import("node:crypto");
+    const broker = createBroker();
+    await broker.sessionStart(`verify-${Date.now()}`);
+    try {
+      const result = await runVerifierLoop({
+        rootDir: process.cwd(),
+        builderRunId: randomUUID2(),
+        verifiers,
+        maxRounds,
+        autonomous,
+        runVerifier: async (verifierDef, builderRunId, round) => {
+          const agentName = verifierDef.model?.split("/")[0] || "codex";
+          const systemPromptPath = join6(process.cwd(), ".choreographer", "verifier", verifierDef.id, "system-prompt.md");
+          let systemPrompt = `Verify claims for builder run ${builderRunId}, round ${round}. Verifier: ${verifierDef.id}.`;
+          try {
+            systemPrompt = readFileSync6(systemPromptPath, "utf8");
+          } catch {
+          }
+          const r = await broker.invoke({
+            agentName,
+            prompt: systemPrompt,
+            model: verifierDef.model?.split("/")[1],
+            timeout: 5 * 6e4
+          });
+          if (r.structured) return r.structured;
+          try {
+            return JSON.parse(r.output);
+          } catch {
+            return { verifier_id: verifierDef.id, builder_run_id: builderRunId, round, status: "error", confidence: 0, verified_claims: [], failed_claims: [], couldnt_verify: [{ id: "parse", claim: "output parsing", reason: "verifier output not valid JSON" }], feedback_given: null, improvement_needed: null };
+          }
+        },
+        onEscalation: (type, details) => {
+          console.error(`[verify] Escalation: ${type}`, JSON.stringify(details));
+        },
+        onRoundComplete: (round, composite) => {
+          if (!jsonMode) console.log(`[verify] Round ${round}: ${composite.status} (${composite.failed_claims.length} failed)`);
+        }
+      });
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: "verify", converged: result.converged, rounds: result.rounds, composite: result.composite }));
+      } else {
+        console.log(`[verify] ${result.converged ? "Converged" : "Not converged"} after ${result.rounds} round(s)`);
+        if (result.composite?.failed_claims?.length > 0) {
+          console.log(`[verify] Failed claims: ${result.composite.failed_claims.map((c) => c.id).join(", ")}`);
+        }
+        if (result.escalated) console.log(`[verify] Escalated: ${result.escalated}`);
+      }
+      process.exit(result.converged ? 0 : 1);
+    } catch (err) {
+      console.error(`[verify] Error: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
-    process.exit(0);
   }
   if (cmd === "adversarial-review") {
     const jsonMode = rest.includes("--json");
@@ -19234,20 +19767,28 @@ ${"\u2550".repeat(60)}`);
       });
     } catch {
     }
-    const result = await runAgent("codex", codexEntry.binary, ["exec", prompt], (raw) => {
-      try {
-        const parsed = parseStructuredOutput(raw, reviewSchema);
-        return { parsed, rawOutput: raw };
-      } catch (err) {
-        return { parsed: null, parseError: err.message, rawOutput: raw };
-      }
-    });
-    const rendered = renderReviewResult(result, {
+    const broker = createBroker();
+    await broker.sessionStart(`adversarial-review-${Date.now()}`);
+    let result;
+    try {
+      const r = await broker.invoke({ agentName: "codex", prompt, timeout: 5 * 6e4, structuredSchema: reviewSchema });
+      result = { name: "codex", output: r.output || "", error: r.error || "", code: r.exitCode ?? 0 };
+    } catch (err) {
+      result = { name: "codex", output: "", error: err.message, code: 1 };
+    } finally {
+      await broker.shutdown();
+    }
+    let parsed = null;
+    try {
+      parsed = result.output ? parseStructuredOutput(result.output, reviewSchema) : null;
+    } catch {
+    }
+    const rendered = renderReviewResult({ ...result, parsed, rawOutput: result.output }, {
       targetLabel: context.summary,
       reviewLabel: "Adversarial Review"
     });
     if (jsonMode) {
-      console.log(JSON.stringify({ command: "adversarial-review", target: context.summary, verdict: result.parsed?.verdict, findings: result.parsed?.findings || [] }));
+      console.log(JSON.stringify({ command: "adversarial-review", target: context.summary, verdict: parsed?.verdict, findings: parsed?.findings || [] }));
     } else {
       console.log(rendered);
     }

@@ -7,6 +7,7 @@ import {
   printDelimited, printJSON, stripFlags,
 } from './runners.mjs';
 import { emit } from './observability.mjs';
+import { createBroker } from './runtime/broker.mjs';
 import { runCouncil } from './council.mjs';
 import { runGoalAssistant, initGoalsFromPlan } from './goal-assistant.mjs';
 import { loadVerifierConfig, runVerifierLoop, checkPendingFeedback } from './verifier/loop.mjs';
@@ -104,44 +105,12 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       process.exit(1);
     }
 
-    // Use adapter checkAvailability when available
     const availability = entry.adapter
       ? await entry.adapter.checkAvailability()
       : { available: checkCli(entry.binary).status === 'ok' };
-
     if (!availability.available && !availability.transport) {
       console.error(`Agent "${name}" is not installed. Run: ${entry.setup}`);
       process.exit(1);
-    }
-
-    // Build args based on agent type (legacy path when adapter not used)
-    let args;
-    let parse = s => s;
-    switch (name) {
-      case 'claude': {
-        const claudeArgs = ['--print', '--output-format', 'stream-json', '--verbose', task, '--dangerously-skip-permissions'];
-        if (modelEquals) claudeArgs.splice(0, 0, '--model', modelEquals);
-        args = claudeArgs;
-        parse = parseClaudeStreamJson;
-        break;
-      }
-      case 'codex': {
-        const codexArgs = ['exec', task];
-        if (effortEquals) codexArgs.splice(0, 0, '--effort', effortEquals);
-        if (modelEquals) codexArgs.splice(0, 0, '--model', modelEquals);
-        args = codexArgs;
-        break;
-      }
-      case 'opencode': {
-        const opencodeArgs = ['run', task, '--dangerously-skip-permissions'];
-        if (modelEquals) opencodeArgs.splice(1, 0, '--model', modelEquals);
-        args = opencodeArgs;
-        parse = parseOpenCodeOutput;
-        break;
-      }
-      default:
-        console.error(`Agent "${name}" not supported.`);
-        process.exit(1);
     }
 
     try {
@@ -156,79 +125,50 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block agent dispatch */ }
 
-    // Use adapter only when --transport=acp is explicitly set
-    const transportFlag = rest.find((a) => a.startsWith('--transport='))?.split('=')[1];
-    const useAdapter = transportFlag === 'acp' && entry.adapter;
-
-    if (useAdapter && availability.transport) {
-      const result = await entry.adapter.invoke({
+    const broker = createBroker();
+    await broker.sessionStart(`agent-${Date.now()}`);
+    try {
+      const result = await broker.invoke({
+        agentName: name,
         prompt: task,
         model: modelEquals,
         effort: effortEquals,
-        resumeSessionId: resumeEquals,
+        timeout: 5 * 60_000,
+        idempotencyKey: `agent:${name}:${Date.now()}`,
         mode: modeEquals,
+        resumeSessionId: resumeEquals,
       });
 
+      const output = result.output || '';
+      const exitCode = typeof result.exitCode === 'number' ? result.exitCode : 0;
+
       if (jsonMode) {
-        printJSON('agent', [{ name, output: result.output, error: result.error, exitCode: result.exitCode ?? 0 }]);
+        printJSON('agent', [{ name, output, error: result.error || '', code: exitCode }]);
       } else {
         console.log(`\n${'═'.repeat(60)}`);
-        console.log(`AGENT: ${result.name ?? name.toUpperCase()}`);
+        console.log(`AGENT: ${name.toUpperCase()}`);
         console.log('═'.repeat(60));
-        if (result.exitCode !== 0 && !result.output) {
-          console.log(`[error — exit ${result.exitCode}]`);
+        if (exitCode !== 0 && !output) {
+          console.log(`[error — exit ${exitCode}]`);
           if (result.error) console.log(result.error);
         } else {
-          console.log(result.output || result.error || '[no output]');
+          console.log(output || result.error || '[no output]');
         }
         console.log(`\n${'═'.repeat(60)}`);
       }
 
       try {
-        emit({
-          type: 'agent_completion',
-          name,
-          exitCode: result.exitCode ?? 0,
-          hasError: !!result.error,
-          transport: result.transport,
-        });
-      } catch { /* observability must never block agent dispatch */ }
+        emit({ type: 'agent_completion', name, exitCode, hasError: !!result.error, transport: result.transport });
+      } catch { /* observability must never block */ }
 
-      const exitCode = typeof result.exitCode === 'number' ? result.exitCode : 1;
       await new Promise(resolve => process.stdout.write('', resolve));
       process.exit(exitCode);
+    } catch (err) {
+      console.error(`Agent "${name}" failed: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
-
-    // Legacy path: use runAgent with subprocess
-    const result = await runAgent(name, entry.binary, args, parse);
-
-    if (jsonMode) {
-      printJSON('agent', [result]);
-    } else {
-      console.log(`\n${'═'.repeat(60)}`);
-      console.log(`AGENT: ${result.name.toUpperCase()}`);
-      console.log('═'.repeat(60));
-      if (result.code !== 0 && !result.output) {
-        console.log(`[error — exit ${result.code}]`);
-        if (result.error) console.log(result.error);
-      } else {
-        console.log(result.output || result.error || '[no output]');
-      }
-      console.log(`\n${'═'.repeat(60)}`);
-    }
-
-    try {
-      emit({
-        type: 'agent_completion',
-        name,
-        exitCode: result.code,
-        hasError: !!result.error,
-      });
-    } catch { /* observability must never block agent dispatch */ }
-
-    const exitCode = typeof result.code === 'number' ? result.code : 1;
-    await new Promise(resolve => process.stdout.write('', resolve));
-    process.exit(exitCode);
   }
 
   // ── council ─────────────────────────────────────────────────────────────────
@@ -327,38 +267,27 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     }
     const diff = gitResult.stdout?.trim() || 'No uncommitted changes found.';
 
-    const agents = [
-      {
-        name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', '--output-format', 'stream-json', '--verbose',
-          `Review the following code changes for CORRECTNESS AND SECURITY.\n` +
-          `Focus on: bugs, logic errors, security vulnerabilities, unsafe patterns.\n` +
-          `Be concise — numbered findings.\n\n${diff}`,
-          '--dangerously-skip-permissions'],
-        parse: parseClaudeStreamJson
-      },
-      {
-        name: 'codex', binary: REGISTRY.codex.binary,
-        args: ['exec',
-          `Review the following code changes for SCOPE AND SIMPLICITY.\n` +
-          `Focus on: unnecessary complexity, changes that exceed the stated goal, simpler alternatives.\n` +
-          `Be concise — numbered findings.\n\n${diff}`]
-      },
-      {
-        name: 'opencode', binary: REGISTRY.opencode.binary,
-        args: ['run',
-          `Review the following code changes for EDGE CASES AND ROBUSTNESS.\n` +
-          `Focus on: unhandled inputs, missing error handling, race conditions, what the author missed.\n` +
-          `Be concise — numbered findings.\n\n${diff}`,
-          '--dangerously-skip-permissions'],
-        parse: parseOpenCodeOutput
-      }
+    const prompts = [
+      { name: 'claude', prompt: `Review the following code changes for CORRECTNESS AND SECURITY.\nFocus on: bugs, logic errors, security vulnerabilities, unsafe patterns.\nBe concise — numbered findings.\n\n${diff}` },
+      { name: 'codex', prompt: `Review the following code changes for SCOPE AND SIMPLICITY.\nFocus on: unnecessary complexity, changes that exceed the stated goal, simpler alternatives.\nBe concise — numbered findings.\n\n${diff}` },
+      { name: 'opencode', prompt: `Review the following code changes for EDGE CASES AND ROBUSTNESS.\nFocus on: unhandled inputs, missing error handling, race conditions, what the author missed.\nBe concise — numbered findings.\n\n${diff}` },
     ];
 
-    let available;
-    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
-    jsonMode ? printJSON('review', results) : printDelimited(results);
+    const broker = createBroker();
+    await broker.sessionStart(`review-${Date.now()}`);
+    try {
+      const results = await Promise.all(prompts.map(async (p) => {
+        try {
+          const r = await broker.invoke({ agentName: p.name, prompt: p.prompt, timeout: 5 * 60_000 });
+          return { name: p.name, output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name: p.name, output: '', error: err.message, code: 1 };
+        }
+      }));
+      jsonMode ? printJSON('review', results) : printDelimited(results);
+    } finally {
+      await broker.shutdown();
+    }
   }
 
   // ── debug ────────────────────────────────────────────────────────────────────
@@ -368,28 +297,39 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
     const symptom = stripFlags(rest).join(' ').trim();
     if (!symptom) { console.error('Usage: companion.mjs debug <symptom>'); process.exit(1); }
 
-    const prompt = (focus) =>
+    const availableAgents = Object.entries(REGISTRY).filter(([, e]) => checkCli(e.binary).status === 'ok').map(([n]) => n);
+    if (availableAgents.length < 2) {
+      console.error('Not enough agents available (need at least 2 for debug). Install: /choreo:claude, /choreo:codex, /choreo:opencode');
+      process.exit(1);
+    }
+
+    const makePrompt = (focus) =>
       `A software bug has been reported. Generate a ranked list of hypotheses for the root cause.\n` +
       `Focus area: ${focus}.\n` +
       `Format: numbered list, most likely first, one sentence per hypothesis.\n\n` +
       `Symptom: ${symptom}`;
 
-    const agents = [
-      { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt('application logic, state management, data flow'), '--dangerously-skip-permissions'],
-        parse: parseClaudeStreamJson },
-      { name: 'codex', binary: REGISTRY.codex.binary,
-        args: ['exec', prompt('edge cases in input handling, off-by-one errors, type coercion')] },
-      { name: 'opencode', binary: REGISTRY.opencode.binary,
-        args: ['run', prompt('infrastructure, concurrency, external dependencies, environment'),
-          '--dangerously-skip-permissions'],
-        parse: parseOpenCodeOutput }
+    const prompts = [
+      { name: 'claude', prompt: makePrompt('application logic, state management, data flow') },
+      { name: 'codex', prompt: makePrompt('edge cases in input handling, off-by-one errors, type coercion') },
+      { name: 'opencode', prompt: makePrompt('infrastructure, concurrency, external dependencies, environment') },
     ];
 
-    let available;
-    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
-    jsonMode ? printJSON('debug', results) : printDelimited(results);
+    const broker = createBroker();
+    await broker.sessionStart(`debug-${Date.now()}`);
+    try {
+      const results = await Promise.all(prompts.map(async (p) => {
+        try {
+          const r = await broker.invoke({ agentName: p.name, prompt: p.prompt, timeout: 5 * 60_000 });
+          return { name: p.name, output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name: p.name, output: '', error: err.message, code: 1 };
+        }
+      }));
+      jsonMode ? printJSON('debug', results) : printDelimited(results);
+    } finally {
+      await broker.shutdown();
+    }
   }
 
   // ── second-opinion ───────────────────────────────────────────────────────────
@@ -413,46 +353,43 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `Be direct: state what you agree with, what concerns you, and your overall verdict (approve / approve-with-caveats / reject).\n\n` +
       `${task}`;
 
-    const agentDefs = {
-      claude:   { binary: REGISTRY.claude.binary,   run: () => runAgent('claude',   REGISTRY.claude.binary,   ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'], parseClaudeStreamJson) },
-      codex:    { binary: REGISTRY.codex.binary,    run: () => runAgent('codex',    REGISTRY.codex.binary,    ['exec', prompt]) },
-      opencode: { binary: REGISTRY.opencode.binary, run: () => runAgent('opencode', REGISTRY.opencode.binary, ['run', prompt, '--dangerously-skip-permissions'], parseOpenCodeOutput) },
-    };
-
-    if (requestedAgent && !agentDefs[requestedAgent]) {
-      console.error(`Unknown agent: "${requestedAgent}". Choose from: ${Object.keys(agentDefs).join(', ')}`);
+    const validAgents = Object.keys(REGISTRY);
+    let chosenAgent = requestedAgent ?? 'claude';
+    if (requestedAgent && !validAgents.includes(requestedAgent)) {
+      console.error(`Unknown agent: "${requestedAgent}". Choose from: ${validAgents.join(', ')}`);
       process.exit(1);
     }
 
-    const defaultOrder = ['claude', 'codex', 'opencode'];
-    let chosenAgent = requestedAgent ?? 'claude';
-
-    if (checkCli(agentDefs[chosenAgent].binary).status !== 'ok') {
-      const fallback = (requestedAgent ? Object.keys(agentDefs) : defaultOrder)
-        .find(n => n !== chosenAgent && checkCli(agentDefs[n].binary).status === 'ok');
-
+    if (checkCli(REGISTRY[chosenAgent].binary).status !== 'ok') {
+      const fallback = validAgents.find(n => n !== chosenAgent && checkCli(REGISTRY[n].binary).status === 'ok');
       if (!fallback) {
         console.error(`Agent "${chosenAgent}" not found and no alternatives are available.`);
-        console.error(`Install at least one agent: ${Object.keys(agentDefs).map(n => `${REGISTRY[n].setup}`).join(', ')}`);
+        console.error(`Install at least one agent: ${Object.keys(REGISTRY).map(n => `${REGISTRY[n].setup}`).join(', ')}`);
         process.exit(1);
       }
-
       console.error(`⚠ Agent "${chosenAgent}" not found — using "${fallback}" instead.`);
-      if (requestedAgent) {
-        console.error(`  Install ${chosenAgent}: ${REGISTRY[chosenAgent].setup}`);
-      }
       chosenAgent = fallback;
     }
 
-    const result = await agentDefs[chosenAgent].run();
-    if (jsonMode) {
-      printJSON('second-opinion', [result]);
-    } else {
-      console.log(`\n${'═'.repeat(60)}`);
-      console.log(`SECOND OPINION: ${result.name.toUpperCase()}`);
-      console.log('═'.repeat(60));
-      console.log(result.output || result.error || '[no output]');
-      console.log(`\n${'═'.repeat(60)}`);
+    const broker = createBroker();
+    await broker.sessionStart(`second-opinion-${Date.now()}`);
+    try {
+      const r = await broker.invoke({ agentName: chosenAgent, prompt, timeout: 5 * 60_000 });
+      const result = { name: chosenAgent, output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+      if (jsonMode) {
+        printJSON('second-opinion', [result]);
+      } else {
+        console.log(`\n${'═'.repeat(60)}`);
+        console.log(`SECOND OPINION: ${chosenAgent.toUpperCase()}`);
+        console.log('═'.repeat(60));
+        console.log(result.output || result.error || '[no output]');
+        console.log(`\n${'═'.repeat(60)}`);
+      }
+    } catch (err) {
+      console.error(`Second opinion failed: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
   }
 
@@ -467,66 +404,67 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       `Vote on the following proposition. Reply with a single line starting with YES, NO, or ABSTAIN (uppercase), ` +
       `followed by one sentence of rationale. No other text.\n\nProposition: ${task}`;
 
-    const agents = [
-      { name: 'claude', binary: REGISTRY.claude.binary,
-        args: ['--print', '--output-format', 'stream-json', '--verbose', prompt, '--dangerously-skip-permissions'],
-        parse: parseClaudeStreamJson },
-      { name: 'codex', binary: REGISTRY.codex.binary,
-        args: ['exec', prompt] },
-      { name: 'opencode', binary: REGISTRY.opencode.binary,
-        args: ['run', prompt, '--dangerously-skip-permissions'],
-        parse: parseOpenCodeOutput }
-    ];
+    const agentNames = ['claude', 'codex', 'opencode'];
+    const broker = createBroker();
+    await broker.sessionStart(`vote-${Date.now()}`);
+    try {
+      const results = await Promise.all(agentNames.map(async (name) => {
+        try {
+          const r = await broker.invoke({ agentName: name, prompt, timeout: 5 * 60_000 });
+          return { name, output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+        } catch (err) {
+          return { name, output: '', error: err.message, code: 1 };
+        }
+      }));
 
-    let available;
-    try { available = requireAvailable(agents, 2); } catch (e) { console.error(e.message); process.exit(1); }
-    const results = await Promise.all(available.map(a => runAgent(a.name, a.binary, a.args, a.parse)));
-
-    function parseVote(text) {
-      const line = (text || '').split('\n').find(l => l.trim().length > 0) || '';
-      const clean = line.replace(/[*_`]/g, '').trim().toUpperCase();
-      if (/^YES\b/.test(clean)) return { vote: 'YES', rationale: line.replace(/^yes[^a-z]*/i, '').trim() };
-      if (/^NO\b/.test(clean))  return { vote: 'NO',  rationale: line.replace(/^no[^a-z]*/i,  '').trim() };
-      if (/^ABSTAIN\b/.test(clean)) return { vote: 'ABSTAIN', rationale: line.replace(/^abstain[^a-z]*/i, '').trim() };
-      return { vote: 'INVALID', rationale: line };
-    }
-
-    const tally = { yes: 0, no: 0, abstain: 0, invalid: 0 };
-    const parsed = results.map(r => {
-      const { vote, rationale } = parseVote(r.output);
-      tally[vote.toLowerCase()]++;
-      return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
-    });
-
-    if (tally.invalid === parsed.length) {
-      const msg = 'All agent votes were INVALID — no valid tally produced.';
-      if (jsonMode) { console.log(JSON.stringify({ command: 'vote', error: msg, tally, results: parsed })); }
-      else { console.error(msg); }
-      process.exit(1);
-    }
-
-    if (jsonMode) {
-      console.log(JSON.stringify({ command: 'vote', tally, results: parsed }));
-    } else {
-      const tallyLines = [
-        `| Vote    | Count |`,
-        `|---------|-------|`,
-        `| YES     | ${tally.yes}     |`,
-        `| NO      | ${tally.no}     |`,
-        `| ABSTAIN | ${tally.abstain}     |`,
-        tally.invalid > 0 ? `| INVALID | ${tally.invalid}     |` : null,
-      ].filter(Boolean).join('\n');
-
-      console.log('\n## Vote Tally\n');
-      console.log(tallyLines);
-      console.log('\n## Per-Agent Rationale\n');
-      for (const r of parsed) {
-        console.log(`\n${'═'.repeat(60)}`);
-        console.log(`${r.name.toUpperCase()}: ${r.vote}`);
-        console.log('═'.repeat(60));
-        console.log(r.rationale || r.output || '[no output]');
+      function parseVote(text) {
+        const line = (text || '').split('\n').find(l => l.trim().length > 0) || '';
+        const clean = line.replace(/[*_`]/g, '').trim().toUpperCase();
+        if (/^YES\b/.test(clean)) return { vote: 'YES', rationale: line.replace(/^yes[^a-z]*/i, '').trim() };
+        if (/^NO\b/.test(clean))  return { vote: 'NO',  rationale: line.replace(/^no[^a-z]*/i,  '').trim() };
+        if (/^ABSTAIN\b/.test(clean)) return { vote: 'ABSTAIN', rationale: line.replace(/^abstain[^a-z]*/i, '').trim() };
+        return { vote: 'INVALID', rationale: line };
       }
-      console.log(`\n${'═'.repeat(60)}`);
+
+      const tally = { yes: 0, no: 0, abstain: 0, invalid: 0 };
+      const parsed = results.map(r => {
+        const { vote, rationale } = parseVote(r.output);
+        tally[vote.toLowerCase()]++;
+        return { name: r.name, vote, rationale, output: r.output, error: r.error, exitCode: r.code };
+      });
+
+      if (tally.invalid === parsed.length) {
+        const msg = 'All agent votes were INVALID — no valid tally produced.';
+        if (jsonMode) { console.log(JSON.stringify({ command: 'vote', error: msg, tally, results: parsed })); }
+        else { console.error(msg); }
+        process.exit(1);
+      }
+
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: 'vote', tally, results: parsed }));
+      } else {
+        const tallyLines = [
+          `| Vote    | Count |`,
+          `|---------|-------|`,
+          `| YES     | ${tally.yes}     |`,
+          `| NO      | ${tally.no}     |`,
+          `| ABSTAIN | ${tally.abstain}     |`,
+          tally.invalid > 0 ? `| INVALID | ${tally.invalid}     |` : null,
+        ].filter(Boolean).join('\n');
+
+        console.log('\n## Vote Tally\n');
+        console.log(tallyLines);
+        console.log('\n## Per-Agent Rationale\n');
+        for (const r of parsed) {
+          console.log(`\n${'═'.repeat(60)}`);
+          console.log(`${r.name.toUpperCase()}: ${r.vote}`);
+          console.log('═'.repeat(60));
+          console.log(r.rationale || r.output || '[no output]');
+        }
+        console.log(`\n${'═'.repeat(60)}`);
+      }
+    } finally {
+      await broker.shutdown();
     }
   }
 
@@ -595,17 +533,55 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       }
     }
 
-    // Run verifier loop (stub — actual runVerifier needs broker integration)
-    console.log(`[verify] Running ${verifiers.length} verifier(s), max ${maxRounds} round(s)`);
-    if (autonomous) console.log('[verify] Autonomous mode enabled');
+    const { randomUUID } = await import('node:crypto');
+    const broker = createBroker();
+    await broker.sessionStart(`verify-${Date.now()}`);
+    try {
+      const result = await runVerifierLoop({
+        rootDir: process.cwd(),
+        builderRunId: randomUUID(),
+        verifiers,
+        maxRounds,
+        autonomous,
+        runVerifier: async (verifierDef, builderRunId, round) => {
+          const agentName = verifierDef.model?.split('/')[0] || 'codex';
+          const systemPromptPath = join(process.cwd(), '.choreographer', 'verifier', verifierDef.id, 'system-prompt.md');
+          let systemPrompt = `Verify claims for builder run ${builderRunId}, round ${round}. Verifier: ${verifierDef.id}.`;
+          try { systemPrompt = readFileSync(systemPromptPath, 'utf8'); } catch { /* use default */ }
 
-    // TODO: integrate with broker for actual verifier execution
-    console.log('[verify] Verifier loop execution requires broker integration (Ship 4 in progress)');
+          const r = await broker.invoke({
+            agentName,
+            prompt: systemPrompt,
+            model: verifierDef.model?.split('/')[1],
+            timeout: 5 * 60_000,
+          });
+          if (r.structured) return r.structured;
+          try { return JSON.parse(r.output); } catch { return { verifier_id: verifierDef.id, builder_run_id: builderRunId, round, status: 'error', confidence: 0, verified_claims: [], failed_claims: [], couldnt_verify: [{ id: 'parse', claim: 'output parsing', reason: 'verifier output not valid JSON' }], feedback_given: null, improvement_needed: null }; }
+        },
+        onEscalation: (type, details) => {
+          console.error(`[verify] Escalation: ${type}`, JSON.stringify(details));
+        },
+        onRoundComplete: (round, composite) => {
+          if (!jsonMode) console.log(`[verify] Round ${round}: ${composite.status} (${composite.failed_claims.length} failed)`);
+        },
+      });
 
-    if (jsonMode) {
-      console.log(JSON.stringify({ command: 'verify', verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+      if (jsonMode) {
+        console.log(JSON.stringify({ command: 'verify', converged: result.converged, rounds: result.rounds, composite: result.composite }));
+      } else {
+        console.log(`[verify] ${result.converged ? 'Converged' : 'Not converged'} after ${result.rounds} round(s)`);
+        if (result.composite?.failed_claims?.length > 0) {
+          console.log(`[verify] Failed claims: ${result.composite.failed_claims.map(c => c.id).join(', ')}`);
+        }
+        if (result.escalated) console.log(`[verify] Escalated: ${result.escalated}`);
+      }
+      process.exit(result.converged ? 0 : 1);
+    } catch (err) {
+      console.error(`[verify] Error: ${err.message}`);
+      process.exit(1);
+    } finally {
+      await broker.shutdown();
     }
-    process.exit(0);
   }
 
   // ── adversarial-review ───────────────────────────────────────────────────────
@@ -662,13 +638,21 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       });
     } catch { /* observability must never block */ }
 
-    // Use adapter if available and — parse callback must return string
-    const result = await runAgent('codex', codexEntry.binary, ['exec', prompt], (raw) => raw);
+    const broker = createBroker();
+    await broker.sessionStart(`adversarial-review-${Date.now()}`);
+    let result;
+    try {
+      const r = await broker.invoke({ agentName: 'codex', prompt, timeout: 5 * 60_000, structuredSchema: reviewSchema });
+      result = { name: 'codex', output: r.output || '', error: r.error || '', code: r.exitCode ?? 0 };
+    } catch (err) {
+      result = { name: 'codex', output: '', error: err.message, code: 1 };
+    } finally {
+      await broker.shutdown();
+    }
 
-    // Parse structured output after runAgent returns
     let parsed = null;
     try {
-      parsed = parseStructuredOutput(result.output, reviewSchema);
+      parsed = result.output ? parseStructuredOutput(result.output, reviewSchema) : null;
     } catch { /* graceful degradation — raw output still available */ }
 
     const rendered = renderReviewResult({ ...result, parsed, rawOutput: result.output }, {

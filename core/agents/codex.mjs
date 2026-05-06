@@ -11,6 +11,7 @@
 import { AgentAdapter } from './base.mjs';
 import { AcpClient, parseStructured } from './acp-client.mjs';
 import { spawn } from 'node:child_process';
+import { buildAgentEnv } from '../env.mjs';
 
 export class CodexAdapter extends AgentAdapter {
   get name() { return 'codex'; }
@@ -30,7 +31,7 @@ export class CodexAdapter extends AgentAdapter {
   async checkAvailability() {
     try {
       const { spawnSync } = await import('node:child_process');
-      const r = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
+      const r = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000, env: buildAgentEnv() });
       if (r.status === 0) {
         // Codex supports ACP stdio by default in recent versions
         return { available: true, transport: 'acp' };
@@ -45,10 +46,11 @@ export class CodexAdapter extends AgentAdapter {
     const availability = await this.checkAvailability();
 
     if (availability.transport === 'acp') {
-      return this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+      try {
+        return await this._invokeAcp({ prompt, model, structuredSchema, timeout, onProgress, resumeSessionId });
+      } catch { /* ACP failed — fall through to native */ }
     }
 
-    // Native fallback: codex exec (simple, no schema enforcement)
     return this._invokeNative({ prompt, model, effort, structuredSchema, timeout });
   }
 
@@ -81,7 +83,7 @@ export class CodexAdapter extends AgentAdapter {
       if (model) args.splice(0, 0, '--model', model);
       if (effort) args.splice(0, 0, '--effort', effort);
 
-      const proc = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'], env: buildAgentEnv() });
       const out = [];
       const err = [];
 
