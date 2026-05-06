@@ -152,5 +152,56 @@
 
 ---
 
-## Ship 5 — Adversarial review + cleanup (NOT STARTED)
+## Ship 5 — Adversarial review + cleanup (SHIPPED)
+
+**Worktree:** `ship-5-adversarial` → committed at `62d3497` on `ship-5-adversarial` branch
+
+### What was done
+- Created `core/git.mjs` — git context collection for adversarial review:
+  - `resolveReviewTarget()` — auto/working-tree/branch scope resolution
+  - `collectReviewContext()` — collects diff, commit log, changed files, untracked files
+  - 256 KB inline diff cap, 24 KB per-untracked-file cap
+  - `detectDefaultBranch()` — origin/HEAD → main/master/trunk fallback
+- Created `core/review-render.mjs` — structured review JSON → markdown:
+  - `renderReviewResult()` — validates schema, normalizes findings, renders by severity
+  - Handles parse errors and validation errors gracefully
+- Created `core/prompts/adversarial-review.md` — adversarial review prompt template
+  - Ported from external plugin with substitutions: `{{TARGET_LABEL}}`, `{{USER_FOCUS}}`, `{{REVIEW_COLLECTION_GUIDANCE}}`, `{{REVIEW_INPUT}}`
+- Created `core/schemas/review-output.schema.json` — review output schema
+  - `verdict ∈ {approve, needs-attention}`, `findings[]` with severity, file, line range, confidence, recommendation
+- Updated `core/companion.mjs`:
+  - `adversarial-review` handler with `--scope`, `--base`, `--json` flags
+  - Loads prompt template + schema, interpolates, dispatches to Codex
+  - Renders structured JSON via `renderReviewResult`
+- Created plugin commands/skills:
+  - `plugin-claude/commands/adversarial-review.md`
+  - `plugin-codex/skills/adversarial-review/SKILL.md`
+  - `plugin-opencode/.opencode/commands/choreo-adversarial-review.md`
+- Updated docs:
+  - `docs/system-architecture.md` — ACP-first architecture overview
+  - `docs/codebase-summary.md` — updated directory inventory with all new modules
+  - `docs/project-overview-pdr.md` — updated overview
+  - `docs/delegation.md` — added command reference table
+- Moved `docs/codex-appserver-migration-plan.md` → `docs/archive/`
+- Bundle + check-bundles: green
+- gitnexus analyze: 1,788 nodes | 2,304 edges | 38 clusters | 43 flows
+
+### Cleanup done
+- Old migration plan archived with redirect note
+- Docs updated to reflect ACP-first broker + council + verifier loop + adversarial review
+
+### Verification
+- Bundle + check-bundles: green
+- Verifier tests: 29/29 pass
+- gitnexus analyze: updated
+
+### Deferred (post-Ship-5 final review)
+- **Ship 1 residuals** (F8, NFF1) — per plan directive
+- **ce-code-review findings** from Ship 4 review — all P0/P1/P2 deferred
+- **Legacy parser retirement** (`parseClaudeStreamJson`, `parseOpenCodeOutput`) — kept for backward compatibility
+- **`codex exec` path retirement** — kept for backward compatibility
+- **Gemini adapter** — deferred per user lock
+
+---
+
 ## Final — ce-code-review (NOT STARTED)
