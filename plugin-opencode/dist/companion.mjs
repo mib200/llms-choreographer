@@ -18270,7 +18270,360 @@ function checkPendingFeedback(rootDir) {
   return results;
 }
 
+// core/git.mjs
+import { execSync } from "node:child_process";
+import { readFileSync as readFileSync5, statSync as statSync2 } from "node:fs";
+import { join as join5 } from "node:path";
+var MAX_UNTRACKED_BYTES = 24 * 1024;
+var DEFAULT_INLINE_DIFF_MAX_FILES = 2;
+var DEFAULT_INLINE_DIFF_MAX_BYTES = 256 * 1024;
+function git(cwd, args, options = {}) {
+  try {
+    const stdout = execSync(`git ${args.join(" ")}`, {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: options.maxBuffer || 10 * 1024 * 1024
+    });
+    return { status: 0, stdout };
+  } catch (err) {
+    return {
+      status: err.status || 1,
+      stdout: err.stdout || "",
+      stderr: err.stderr || "",
+      error: err
+    };
+  }
+}
+function gitChecked(cwd, args, options = {}) {
+  const result = git(cwd, args, options);
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr?.trim() || "exit " + result.status}`);
+  }
+  return result;
+}
+function isProbablyText(buffer) {
+  const sample = buffer.slice(0, 8192);
+  let nullCount = 0;
+  for (let i = 0; i < sample.length; i++) {
+    if (sample[i] === 0) nullCount++;
+  }
+  return nullCount / sample.length < 0.1;
+}
+function formatSection(title, body) {
+  return [`## ${title}`, "", body.trim() ? body.trim() : "(none)", ""].join("\n");
+}
+function formatUntrackedFile(cwd, relativePath) {
+  const absolutePath = join5(cwd, relativePath);
+  let stat;
+  try {
+    stat = statSync2(absolutePath);
+  } catch {
+    return `### ${relativePath}
+(skipped: broken symlink or unreadable file)`;
+  }
+  if (stat.isDirectory()) {
+    return `### ${relativePath}
+(skipped: directory)`;
+  }
+  if (stat.size > MAX_UNTRACKED_BYTES) {
+    return `### ${relativePath}
+(skipped: ${stat.size} bytes exceeds ${MAX_UNTRACKED_BYTES} byte limit)`;
+  }
+  let buffer;
+  try {
+    buffer = readFileSync5(absolutePath);
+  } catch {
+    return `### ${relativePath}
+(skipped: broken symlink or unreadable file)`;
+  }
+  if (!isProbablyText(buffer)) {
+    return `### ${relativePath}
+(skipped: binary file)`;
+  }
+  return [`### ${relativePath}`, "```", buffer.toString("utf8").trimEnd(), "```"].join("\n");
+}
+function getRepoRoot(cwd) {
+  return gitChecked(cwd, ["rev-parse", "--show-toplevel"]).stdout.trim();
+}
+function getCurrentBranch(cwd) {
+  return gitChecked(cwd, ["branch", "--show-current"]).stdout.trim() || "HEAD";
+}
+function detectDefaultBranch(cwd) {
+  const symbolic = git(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
+  if (symbolic.status === 0) {
+    const remoteHead = symbolic.stdout.trim();
+    if (remoteHead.startsWith("refs/remotes/origin/")) {
+      return remoteHead.replace("refs/remotes/origin/", "");
+    }
+  }
+  const candidates = ["main", "master", "trunk"];
+  for (const candidate of candidates) {
+    const local = git(cwd, ["show-ref", "--verify", "--quiet", `refs/heads/${candidate}`]);
+    if (local.status === 0) return candidate;
+    const remote = git(cwd, ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${candidate}`]);
+    if (remote.status === 0) return `origin/${candidate}`;
+  }
+  throw new Error("Unable to detect the repository default branch. Pass --base <ref> or use --scope working-tree.");
+}
+function getWorkingTreeState(cwd) {
+  const staged = gitChecked(cwd, ["diff", "--cached", "--name-only"]).stdout.trim().split("\n").filter(Boolean);
+  const unstaged = gitChecked(cwd, ["diff", "--name-only"]).stdout.trim().split("\n").filter(Boolean);
+  const untracked = gitChecked(cwd, ["ls-files", "--others", "--exclude-standard"]).stdout.trim().split("\n").filter(Boolean);
+  return {
+    staged,
+    unstaged,
+    untracked,
+    isDirty: staged.length > 0 || unstaged.length > 0 || untracked.length > 0
+  };
+}
+function resolveReviewTarget(cwd, options = {}) {
+  getRepoRoot(cwd);
+  const requestedScope = options.scope ?? "auto";
+  const baseRef = options.base ?? null;
+  const state = getWorkingTreeState(cwd);
+  const supportedScopes = /* @__PURE__ */ new Set(["auto", "working-tree", "branch"]);
+  if (baseRef) {
+    return { mode: "branch", label: `branch diff against ${baseRef}`, baseRef, explicit: true };
+  }
+  if (requestedScope === "working-tree") {
+    return { mode: "working-tree", label: "working tree diff", explicit: true };
+  }
+  if (!supportedScopes.has(requestedScope)) {
+    throw new Error(`Unsupported review scope "${requestedScope}". Use one of: auto, working-tree, branch, or pass --base <ref>.`);
+  }
+  if (requestedScope === "branch") {
+    const detectedBase2 = detectDefaultBranch(cwd);
+    return { mode: "branch", label: `branch diff against ${detectedBase2}`, baseRef: detectedBase2, explicit: true };
+  }
+  if (state.isDirty) {
+    return { mode: "working-tree", label: "working tree diff", explicit: false };
+  }
+  const detectedBase = detectDefaultBranch(cwd);
+  return { mode: "branch", label: `branch diff against ${detectedBase}`, baseRef: detectedBase, explicit: false };
+}
+function collectWorkingTreeContext(cwd, state, options = {}) {
+  const includeDiff = options.includeDiff !== false;
+  const status = gitChecked(cwd, ["status", "--short", "--untracked-files=all"]).stdout.trim();
+  const changedFiles = [...new Set([...state.staged, ...state.unstaged, ...state.untracked].filter(Boolean))].sort();
+  let parts;
+  if (includeDiff) {
+    const stagedDiff = gitChecked(cwd, ["diff", "--cached", "--no-ext-diff", "--submodule=diff"]).stdout;
+    const unstagedDiff = gitChecked(cwd, ["diff", "--no-ext-diff", "--submodule=diff"]).stdout;
+    const untrackedBody = state.untracked.map((file2) => formatUntrackedFile(cwd, file2)).join("\n\n");
+    parts = [
+      formatSection("Git Status", status),
+      formatSection("Staged Diff", stagedDiff),
+      formatSection("Unstaged Diff", unstagedDiff),
+      formatSection("Untracked Files", untrackedBody)
+    ];
+  } else {
+    const stagedStat = gitChecked(cwd, ["diff", "--shortstat", "--cached"]).stdout.trim();
+    const unstagedStat = gitChecked(cwd, ["diff", "--shortstat"]).stdout.trim();
+    const untrackedBody = state.untracked.map((file2) => formatUntrackedFile(cwd, file2)).join("\n\n");
+    parts = [
+      formatSection("Git Status", status),
+      formatSection("Staged Diff Stat", stagedStat),
+      formatSection("Unstaged Diff Stat", unstagedStat),
+      formatSection("Changed Files", changedFiles.join("\n")),
+      formatSection("Untracked Files", untrackedBody)
+    ];
+  }
+  return {
+    mode: "working-tree",
+    summary: `Reviewing ${state.staged.length} staged, ${state.unstaged.length} unstaged, and ${state.untracked.length} untracked file(s).`,
+    content: parts.join("\n"),
+    changedFiles
+  };
+}
+function collectBranchContext(cwd, baseRef, options = {}) {
+  const includeDiff = options.includeDiff !== false;
+  const mergeBase = gitChecked(cwd, ["merge-base", "HEAD", baseRef]).stdout.trim();
+  const commitRange = `${mergeBase}..HEAD`;
+  const currentBranch = getCurrentBranch(cwd);
+  const changedFiles = gitChecked(cwd, ["diff", "--name-only", commitRange]).stdout.trim().split("\n").filter(Boolean);
+  const logOutput = gitChecked(cwd, ["log", "--oneline", "--decorate", commitRange]).stdout.trim();
+  const diffStat = gitChecked(cwd, ["diff", "--stat", commitRange]).stdout.trim();
+  return {
+    mode: "branch",
+    summary: `Reviewing branch ${currentBranch} against ${baseRef} from merge-base ${mergeBase}.`,
+    content: includeDiff ? [
+      formatSection("Commit Log", logOutput),
+      formatSection("Diff Stat", diffStat),
+      formatSection("Branch Diff", gitChecked(cwd, ["diff", "--no-ext-diff", "--submodule=diff", commitRange]).stdout)
+    ].join("\n") : [
+      formatSection("Commit Log", logOutput),
+      formatSection("Diff Stat", diffStat),
+      formatSection("Changed Files", changedFiles.join("\n"))
+    ].join("\n"),
+    changedFiles,
+    comparison: { mergeBase, commitRange, reviewRange: `${baseRef}...HEAD` }
+  };
+}
+function buildAdversarialCollectionGuidance(options = {}) {
+  if (options.includeDiff !== false) {
+    return "Use the repository context below as primary evidence.";
+  }
+  return "The repository context below is a lightweight summary. Inspect the target diff yourself with read-only git commands before finalizing findings.";
+}
+function measureGitOutputBytes(cwd, args, maxBytes) {
+  const result = git(cwd, args, { maxBuffer: maxBytes + 1 });
+  if (result.error && result.error.code === "ENOBUFS") return maxBytes + 1;
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr?.trim() || "exit " + result.status}`);
+  return Buffer.byteLength(result.stdout, "utf8");
+}
+function collectReviewContext(cwd, target, options = {}) {
+  const repoRoot = getRepoRoot(cwd);
+  const currentBranch = getCurrentBranch(repoRoot);
+  const maxInlineFiles = Number.isFinite(options.maxInlineFiles) && options.maxInlineFiles >= 0 ? Math.floor(options.maxInlineFiles) : DEFAULT_INLINE_DIFF_MAX_FILES;
+  const maxInlineDiffBytes = Number.isFinite(options.maxInlineDiffBytes) && options.maxInlineDiffBytes >= 0 ? Math.floor(options.maxInlineDiffBytes) : DEFAULT_INLINE_DIFF_MAX_BYTES;
+  let details;
+  let includeDiff;
+  let diffBytes;
+  if (target.mode === "working-tree") {
+    const state = getWorkingTreeState(repoRoot);
+    const stagedBytes = measureGitOutputBytes(repoRoot, ["diff", "--cached", "--no-ext-diff", "--submodule=diff"], maxInlineDiffBytes);
+    const unstagedBytes = measureGitOutputBytes(repoRoot, ["diff", "--no-ext-diff", "--submodule=diff"], maxInlineDiffBytes - stagedBytes);
+    diffBytes = stagedBytes + unstagedBytes;
+    includeDiff = options.includeDiff ?? ([...state.staged, ...state.unstaged, ...state.untracked].filter(Boolean).length <= maxInlineFiles && diffBytes <= maxInlineDiffBytes);
+    details = collectWorkingTreeContext(repoRoot, state, { includeDiff });
+  } else {
+    const mergeBase = gitChecked(repoRoot, ["merge-base", "HEAD", target.baseRef]).stdout.trim();
+    const commitRange = `${mergeBase}..HEAD`;
+    const fileCount = gitChecked(repoRoot, ["diff", "--name-only", commitRange]).stdout.trim().split("\n").filter(Boolean).length;
+    diffBytes = measureGitOutputBytes(repoRoot, ["diff", "--no-ext-diff", "--submodule=diff", commitRange], maxInlineDiffBytes);
+    includeDiff = options.includeDiff ?? (fileCount <= maxInlineFiles && diffBytes <= maxInlineDiffBytes);
+    details = collectBranchContext(repoRoot, target.baseRef, { includeDiff, comparison: { mergeBase, commitRange } });
+  }
+  return {
+    cwd: repoRoot,
+    repoRoot,
+    branch: currentBranch,
+    target,
+    fileCount: details.changedFiles.length,
+    diffBytes,
+    inputMode: includeDiff ? "inline-diff" : "self-collect",
+    collectionGuidance: buildAdversarialCollectionGuidance({ includeDiff }),
+    ...details
+  };
+}
+
+// core/review-render.mjs
+function severityRank(severity) {
+  switch (severity) {
+    case "critical":
+      return 0;
+    case "high":
+      return 1;
+    case "medium":
+      return 2;
+    default:
+      return 3;
+  }
+}
+function formatLineRange(finding) {
+  if (!finding.line_start) return "";
+  if (!finding.line_end || finding.line_end === finding.line_start) return `:${finding.line_start}`;
+  return `:${finding.line_start}-${finding.line_end}`;
+}
+function validateReviewResultShape(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "Expected a top-level JSON object.";
+  if (typeof data.verdict !== "string" || !data.verdict.trim()) return "Missing string `verdict`.";
+  if (typeof data.summary !== "string" || !data.summary.trim()) return "Missing string `summary`.";
+  if (!Array.isArray(data.findings)) return "Missing array `findings`.";
+  if (!Array.isArray(data.next_steps)) return "Missing array `next_steps`.";
+  return null;
+}
+function normalizeReviewFinding(finding, index) {
+  const source = finding && typeof finding === "object" && !Array.isArray(finding) ? finding : {};
+  const lineStart = Number.isInteger(source.line_start) && source.line_start > 0 ? source.line_start : null;
+  const lineEnd = Number.isInteger(source.line_end) && source.line_end > 0 && (!lineStart || source.line_end >= lineStart) ? source.line_end : lineStart;
+  return {
+    severity: typeof source.severity === "string" && source.severity.trim() ? source.severity.trim() : "low",
+    title: typeof source.title === "string" && source.title.trim() ? source.title.trim() : `Finding ${index + 1}`,
+    body: typeof source.body === "string" && source.body.trim() ? source.body.trim() : "No details provided.",
+    file: typeof source.file === "string" && source.file.trim() ? source.file.trim() : "unknown",
+    line_start: lineStart,
+    line_end: lineEnd,
+    recommendation: typeof source.recommendation === "string" ? source.recommendation.trim() : ""
+  };
+}
+function normalizeReviewResultData(data) {
+  return {
+    verdict: data.verdict.trim(),
+    summary: data.summary.trim(),
+    findings: data.findings.map((finding, index) => normalizeReviewFinding(finding, index)),
+    next_steps: data.next_steps.filter((step) => typeof step === "string" && step.trim()).map((step) => step.trim())
+  };
+}
+function renderReviewResult(parsedResult, meta3) {
+  if (!parsedResult.parsed) {
+    const lines2 = [
+      `# Adversarial Review`,
+      "",
+      "Agent did not return valid structured JSON.",
+      "",
+      `- Parse error: ${parsedResult.parseError}`
+    ];
+    if (parsedResult.rawOutput) {
+      lines2.push("", "Raw final message:", "", "```text", parsedResult.rawOutput, "```");
+    }
+    return `${lines2.join("\n").trimEnd()}
+`;
+  }
+  const validationError = validateReviewResultShape(parsedResult.parsed);
+  if (validationError) {
+    const lines2 = [
+      `# Adversarial Review`,
+      "",
+      `Target: ${meta3.targetLabel}`,
+      "Agent returned JSON with an unexpected review shape.",
+      "",
+      `- Validation error: ${validationError}`
+    ];
+    if (parsedResult.rawOutput) {
+      lines2.push("", "Raw final message:", "", "```text", parsedResult.rawOutput, "```");
+    }
+    return `${lines2.join("\n").trimEnd()}
+`;
+  }
+  const data = normalizeReviewResultData(parsedResult.parsed);
+  const findings = [...data.findings].sort((left, right) => severityRank(left.severity) - severityRank(right.severity));
+  const lines = [
+    `# Adversarial Review`,
+    "",
+    `Target: ${meta3.targetLabel}`,
+    `Verdict: ${data.verdict}`,
+    "",
+    data.summary,
+    ""
+  ];
+  if (findings.length === 0) {
+    lines.push("No material findings.");
+  } else {
+    lines.push("Findings:");
+    for (const finding of findings) {
+      const lineSuffix = formatLineRange(finding);
+      lines.push(`- [${finding.severity}] ${finding.title} (${finding.file}${lineSuffix})`);
+      lines.push(`  ${finding.body}`);
+      if (finding.recommendation) {
+        lines.push(`  Recommendation: ${finding.recommendation}`);
+      }
+    }
+  }
+  if (data.next_steps.length > 0) {
+    lines.push("", "Next steps:");
+    for (const step of data.next_steps) {
+      lines.push(`- ${step}`);
+    }
+  }
+  return `${lines.join("\n").trimEnd()}
+`;
+}
+
 // core/companion.mjs
+import { readFileSync as readFileSync6 } from "node:fs";
+import { join as join6, dirname as dirname4 } from "node:path";
 function describeTask(task) {
   return {
     task_hash: createHash("sha256").update(task, "utf8").digest("hex").slice(0, 16),
@@ -18840,6 +19193,63 @@ ${"\u2550".repeat(60)}`);
     console.log("[verify] Verifier loop execution requires broker integration (Ship 4 in progress)");
     if (jsonMode) {
       console.log(JSON.stringify({ command: "verify", verifiers: verifiers.map((v) => v.id), maxRounds, autonomous }));
+    }
+    process.exit(0);
+  }
+  if (cmd === "adversarial-review") {
+    const jsonMode = rest.includes("--json");
+    const scopeFlag = rest.find((a) => a.startsWith("--scope="))?.split("=")[1];
+    const baseFlag = rest.find((a) => a.startsWith("--base="))?.split("=")[1];
+    const focusTokens = rest.filter((a) => !a.startsWith("--") && !["--json"].includes(a));
+    const userFocus = focusTokens.join(" ") || "general code review";
+    const options = { scope: scopeFlag, base: baseFlag };
+    const target = resolveReviewTarget(process.cwd(), options);
+    const context = collectReviewContext(process.cwd(), target, {
+      maxInlineFiles: 2,
+      maxInlineDiffBytes: 256 * 1024
+    });
+    const promptTemplate = readFileSync6(
+      join6(dirname4(fileURLToPath3(import.meta.url)), "prompts", "adversarial-review.md"),
+      "utf8"
+    );
+    const reviewSchema = JSON.parse(
+      readFileSync6(
+        join6(dirname4(fileURLToPath3(import.meta.url)), "schemas", "review-output.schema.json"),
+        "utf8"
+      )
+    );
+    const prompt = promptTemplate.replace("{{TARGET_LABEL}}", context.summary).replace("{{USER_FOCUS}}", userFocus).replace("{{REVIEW_COLLECTION_GUIDANCE}}", context.collectionGuidance).replace("{{REVIEW_INPUT}}", context.content);
+    const codexEntry = REGISTRY.codex;
+    if (!codexEntry) {
+      console.error("[adversarial-review] Codex agent not available.");
+      process.exit(1);
+    }
+    try {
+      emit({
+        type: "adversarial_review",
+        target: context.summary,
+        scope: target.mode,
+        file_count: context.fileCount,
+        diff_bytes: context.diffBytes
+      });
+    } catch {
+    }
+    const result = await runAgent("codex", codexEntry.binary, ["exec", prompt], (raw) => {
+      try {
+        const parsed = parseStructuredOutput(raw, reviewSchema);
+        return { parsed, rawOutput: raw };
+      } catch (err) {
+        return { parsed: null, parseError: err.message, rawOutput: raw };
+      }
+    });
+    const rendered = renderReviewResult(result, {
+      targetLabel: context.summary,
+      reviewLabel: "Adversarial Review"
+    });
+    if (jsonMode) {
+      console.log(JSON.stringify({ command: "adversarial-review", target: context.summary, verdict: result.parsed?.verdict, findings: result.parsed?.findings || [] }));
+    } else {
+      console.log(rendered);
     }
     process.exit(0);
   }
