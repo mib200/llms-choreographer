@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Council Position",
+  "description": "Structured JSON position from a council debater (Evolution A)",
+  "type": "object",
+  "required": ["recommendation", "top_reasons", "risks_accepted", "wont_do", "confidence", "citations"],
+  "properties": {
+    "recommendation": {
+      "type": "string",
+      "description": "The debater's primary recommendation"
+    },
+    "top_reasons": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Top reasons supporting the recommendation"
+    },
+    "risks_accepted": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Risks the debater is willing to accept"
+    },
+    "wont_do": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Things the debater explicitly won't do"
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Confidence level 0-100"
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file"],
+        "properties": {
+          "file": { "type": "string" },
+          "line_start": { "type": "integer" },
+          "line_end": { "type": "integer" },
+          "precision": {
+            "type": "string",
+            "enum": ["exact", "line-approx"],
+            "description": "exact for ACP agents, line-approx for subprocess agents (Evolution B)"
+          }
+        }
+      },
+      "description": "File + line citations supporting the position"
+    }
+  }
+}

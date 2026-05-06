@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Goals",
+  "description": "Machine-readable goal definitions for the Verifier Loop. Produced by the goal-definition assistant.",
+  "type": "object",
+  "required": ["goals"],
+  "properties": {
+    "goals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "verify"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique goal identifier (kebab-case)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what 'done' looks like."
+          },
+          "verify": {
+            "type": "string",
+            "description": "Verifier ID or script path that validates this goal."
+          },
+          "confidence_threshold": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.85,
+            "description": "Minimum confidence for autonomous claim approval."
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Overall confidence in goal extraction (0.0–1.0)."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["interview", "plan", "inline", "goals.json"],
+      "description": "How these goals were derived."
+    }
+  }
+}

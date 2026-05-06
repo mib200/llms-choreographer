@@ -7,16 +7,7 @@ const ALL_AGENTS = ['claude', 'codex', 'opencode'];
 test('vote --json emits valid JSON with tally and 3 results', () => {
   // Fake agents echo "YES — rationale" so parseVote extracts YES
   const fake = createFakeAgents(ALL_AGENTS, {
-    script: (name) => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then',
-      `    echo "${name}-fake 0.0.0"`,
-      '    exit 0',
-      '  fi',
-      'done',
-      'echo "YES — fake rationale from ' + name + '"',
-    ].join('\n'),
+    response: (name) => `YES — fake rationale from ${name}`,
   });
   try {
     const { stdout, stderr, code } = runCompanion(['vote', '--json', 'adopt TypeScript?'], { path: fake.path });
@@ -39,16 +30,7 @@ test('vote --json emits valid JSON with tally and 3 results', () => {
 test('vote --json correctly tallies mixed votes', () => {
   const votes = { claude: 'YES', codex: 'NO', opencode: 'ABSTAIN' };
   const fake = createFakeAgents(ALL_AGENTS, {
-    script: (name) => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then',
-      `    echo "${name}-fake 0.0.0"`,
-      '    exit 0',
-      '  fi',
-      'done',
-      `echo "${votes[name]} — rationale from ${name}"`,
-    ].join('\n'),
+    response: (name) => `${votes[name]} — rationale from ${name}`,
   });
   try {
     const { stdout, code, stderr } = runCompanion(['vote', '--json', 'add Redis?'], { path: fake.path });
@@ -65,16 +47,7 @@ test('vote --json correctly tallies mixed votes', () => {
 
 test('vote text mode contains tally table header', () => {
   const fake = createFakeAgents(ALL_AGENTS, {
-    script: (name) => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then',
-      `    echo "${name}-fake 0.0.0"`,
-      '    exit 0',
-      '  fi',
-      'done',
-      'echo "YES — looks good"',
-    ].join('\n'),
+    response: 'YES — looks good',
   });
   try {
     const { stdout, code } = runCompanion(['vote', 'adopt TypeScript?'], { path: fake.path });

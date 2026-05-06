@@ -1,6 +1,7 @@
 ---
 title: ACP Migration Foundation
 date: 2026-05-05
+last_updated: 2026-05-06
 category: architecture-patterns
 module: agent-protocol
 problem_type: architecture_pattern
@@ -41,7 +42,7 @@ Adopt ACP as the primary transport. The broker is an ACP client using `@agentcli
 
 **Per-agent adapter pattern**:
 1. Try ACP stdio spawn → `initialize` → if success, use ACP for all operations
-2. If ACP spawn fails or `initialize` fails → fall back to native transport
+2. If ACP spawn fails, `initialize` fails, OR any ACP invocation throws → automatic fallback to native transport (try/catch in `invoke()`)
 3. Report active transport via `checkAvailability()` → `{ available, transport: "acp" | "native", reason? }`
 
 | Agent | ACP stdio spawn (PRIMARY) | Native fallback |
@@ -73,14 +74,17 @@ Lifecycle-critical events (`builder_stop`, `verifier_dispatch`, `verifier_report
 
 ### ACP Permission Default
 
-Non-interactive sessions auto-deny `session/request_permission`. Explicit allowlist overrides per verifier / per council member. Unanimous council consensus on security posture.
+ALL sessions deny `session/request_permission` by default — both interactive and non-interactive. Only an explicit `permissionAllowlist` set grants access. The earlier "interactive auto-allow" was removed as a security regression (council review 2026-05-06). Unanimous consensus on deny-by-default posture.
 
 ### Broker Resilience (Mandatory from Day One)
 
 - Dead-letter queue for failed messages
-- Idempotency keys on all requests
-- Circuit-breaker per adapter
+- Idempotency keys on all requests (bounded: 1000 entries, 1hr TTL, FIFO eviction)
+- Circuit-breaker per adapter (half-open → open on probe failure)
 - Load queue (sequential processing per agent)
+- Default timeout: 5 minutes per invocation
+
+**Production wiring (verified 2026-05-06):** `companion.mjs` and `council.mjs` both invoke agents exclusively through `broker.invoke()`. No direct subprocess spawning in production paths. Env scrubbing via `buildAgentEnv()` (from `core/env.mjs`) applied to all adapter spawns.
 
 ### Gemini Locked to Ship 5+
 
@@ -171,3 +175,4 @@ Ship 1 establishes observability + single-agent fix. Ship 2 runs one full week o
 - Related tooling bug: `docs/solutions/developer-experience/write-tool-empty-params-large-content-2026-05-05.md` (Write tool parameter stripping encountered during plan authoring)
 - Codex adversarial review: `docs/reviews/codex-adversarial-2026-05-05/README.md` (Phase D fixes FF1/F6/F8)
 - ce-code-review (9-persona): `docs/reviews/ce-adversarial/ship1-foundation-2026-05-05.md` (2 P0 + 10 P1 deferred pending security plan)
+- Broker wiring lesson: `docs/solutions/architecture-patterns/broker-wiring-dead-code-prevention-2026-05-06.md` (verifying production callers exist before claiming a feature ships)

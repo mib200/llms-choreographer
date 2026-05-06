@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "node plugin-claude/scripts/lifecycle.mjs start --env-file=$CLAUDE_ENV_FILE",
+      "timeout": 30000
+    },
+    {
+      "event": "SessionEnd",
+      "command": "node plugin-claude/scripts/lifecycle.mjs end --env-file=$CLAUDE_ENV_FILE",
+      "timeout": 30000
+    }
+  ]
+}

@@ -22,6 +22,14 @@ test('strips --agent=<value> as one token', () => {
   assert.deepEqual(stripFlags(['--agent=gemini', 'task']), ['task']);
 });
 
+test('strips --model and --effort with separate values', () => {
+  assert.deepEqual(stripFlags(['task', '--model', 'gpt-5', '--effort', 'high']), ['task']);
+});
+
+test('strips --model=<value> and --effort=<value> after positional args', () => {
+  assert.deepEqual(stripFlags(['task', '--model=gpt-5', '--effort=high']), ['task']);
+});
+
 test('preserves positional args', () => {
   assert.deepEqual(stripFlags(['adopt', 'TypeScript?']), ['adopt', 'TypeScript?']);
 });

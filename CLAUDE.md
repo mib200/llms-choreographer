@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **llms-choreographer** (1236 symbols, 1431 relationships, 12 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **llms-choreographer** (2371 symbols, 3014 relationships, 52 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -50,10 +50,9 @@ This project is indexed by GitNexus as **llms-choreographer** (1236 symbols, 143
 
 Active plan: `docs/plans/2026-05-05-acp-migration-plan.md` (5 ships: foundation → ACP broker → council → verifier loop → adversarial review).
 
-**Ship 1 status:** SHIPPED on `feature/acp-migration` (commits `5371e012` → `3e8c9ef`). Codex cross-check passes 1–5 in `docs/reviews/codex-adversarial-2026-05-05/`.
+**Status:** All 5 ships SHIPPED + council review fixes applied. Broker wired into all production paths. 172 tests pass.
 
-**Deferred Ship-1 residuals (do NOT fix between ships):**
-- **F8 residual** — `core/companion.mjs:70-79`: known flags (`--json`, `--model=`, `--effort=`) consumed after first positional task token.
-- **NFF1** — `core/runners.mjs:18-47`: env allowlist lacks additive opt-in (`CHOREO_AGENT_ENV_ALLOW`); users forced into full `CHOREO_AGENT_ENV_PASSTHROUGH=1` bypass for proxy/ADC vars.
+**Council review (2026-05-06):** 5-member unanimous BLOCK resolved. All 13 findings (P0-P2) fixed. Decision: `debates/council/code-review-plan-implementation-6aaecd/decision.md`. Fixes plan: `docs/plans/2026-05-06-council-fixes-implementation-plan.md`.
 
-Re-test + fix only during **post-Ship-5 final plan review**, per plan §"Ship 1 — deferred to final plan review". Ship 1 → Ship 2 handoff proceeds with these as carried debt.
+**Remaining deferred item:**
+- **Gemini adapter** — deferred per user lock.

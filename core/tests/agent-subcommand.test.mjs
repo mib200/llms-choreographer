@@ -155,8 +155,8 @@ test('agent passes --model flag to Codex', () => {
   try {
     const { stdout, code } = runCompanion(['agent', '--name=codex', '--model=gpt-5', 'test'], { path: fake.path, logDir });
     assert.equal(code, 0);
-    assert.match(stdout, /--model/);
-    assert.match(stdout, /gpt-5/);
+    assert.match(stdout, /PROMPT: test/);
+    assert.ok(!stdout.includes('--model'), 'model flag is not leaked into prompt text');
   } finally {
     fake.cleanup();
   }
@@ -167,15 +167,15 @@ test('agent passes --effort flag to Codex', () => {
   try {
     const { stdout, code } = runCompanion(['agent', '--name=codex', '--effort=high', 'test'], { path: fake.path, logDir });
     assert.equal(code, 0);
-    assert.match(stdout, /--effort/);
-    assert.match(stdout, /high/);
+    assert.match(stdout, /PROMPT: test/);
+    assert.ok(!stdout.includes('--effort'), 'effort flag is not leaked into prompt text');
   } finally {
     fake.cleanup();
   }
 });
 
-test('agent propagates non-zero exit code from failed agent', () => {
-  // Fake agent that exits 42 on any invocation (still responds to --version).
+test('agent reports ACP invocation failure when protocol startup fails', () => {
+  // Fake agent exits on invocation (still responds to --version).
   const fake = createFakeAgents(['codex'], {
     script: () => [
       '#!/bin/sh',
@@ -187,8 +187,9 @@ test('agent propagates non-zero exit code from failed agent', () => {
     ].join('\n'),
   });
   try {
-    const { code } = runCompanion(['agent', '--name=codex', 'will fail'], { path: fake.path, logDir });
-    assert.equal(code, 42, 'exit code from failing agent propagates to companion');
+    const { stdout, code } = runCompanion(['agent', '--name=codex', 'will fail'], { path: fake.path, logDir });
+    assert.equal(code, 1);
+    assert.match(stdout, /codex ACP invocation failed/);
   } finally {
     fake.cleanup();
   }
@@ -216,24 +217,13 @@ test('agent_invocation event redacts raw task text (hash + preview only)', async
   }
 });
 
-test('claude --name dispatches parses stream-json output before printing', () => {
-  // Fake claude emits a single stream-json assistant event. The agent subcommand
-  // must run parseClaudeStreamJson, so the final stdout must contain the extracted
-  // text, NOT the raw JSON envelope.
-  const fake = createFakeAgents(['claude'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "claude-fake 0.0.0"; exit 0; fi',
-      'done',
-      'printf \'{"type":"assistant","message":{"content":[{"type":"text","text":"PARSED_TEXT_MARKER"}]}}\\n\'',
-    ].join('\n'),
-  });
+test('claude --name dispatches through ACP fake npx adapter', () => {
+  const fake = createFakeAgents(['claude']);
   try {
     const { stdout, code } = runCompanion(['agent', '--name=claude', 'anything'], { path: fake.path, logDir });
     assert.equal(code, 0);
-    assert.match(stdout, /PARSED_TEXT_MARKER/, 'parsed text reaches stdout');
-    assert.ok(!stdout.includes('"type":"assistant"'), 'raw stream-json envelope is not emitted');
+    assert.match(stdout, /AGENT: CLAUDE/);
+    assert.match(stdout, /PROMPT: anything/);
   } finally {
     fake.cleanup();
   }
@@ -243,17 +233,7 @@ test('runAgent scrubs sensitive env vars from spawned child by default (F6)', ()
   // Regression guard: parent shell leaks (AWS_*, GITHUB_TOKEN, DATABASE_URL)
   // must NOT reach the child agent binary. runAgent() now applies an env allowlist.
   const fake = createFakeAgents(['codex'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
-      'done',
-      'echo "AWS_SECRET=${AWS_SECRET_ACCESS_KEY:-MISSING}"',
-      'echo "GH_TOK=${GITHUB_TOKEN:-MISSING}"',
-      'echo "DB=${DATABASE_URL:-MISSING}"',
-      'echo "NPM_TOK=${NPM_TOKEN:-MISSING}"',
-      'echo "HOME_OK=${HOME:+present}"',
-    ].join('\n'),
+    envEchoKeys: ['AWS_SECRET_ACCESS_KEY', 'GITHUB_TOKEN', 'DATABASE_URL', 'NPM_TOKEN', 'HOME'],
   });
   try {
     const { stdout, code } = runCompanion(
@@ -269,27 +249,19 @@ test('runAgent scrubs sensitive env vars from spawned child by default (F6)', ()
       }
     );
     assert.equal(code, 0);
-    assert.match(stdout, /AWS_SECRET=MISSING/, 'AWS_SECRET_ACCESS_KEY scrubbed from child env');
-    assert.match(stdout, /GH_TOK=MISSING/,     'GITHUB_TOKEN scrubbed');
-    assert.match(stdout, /DB=MISSING/,          'DATABASE_URL scrubbed');
-    assert.match(stdout, /NPM_TOK=MISSING/,     'NPM_TOKEN scrubbed');
+    assert.match(stdout, /AWS_SECRET_ACCESS_KEY=MISSING/, 'AWS_SECRET_ACCESS_KEY scrubbed from child env');
+    assert.match(stdout, /GITHUB_TOKEN=MISSING/,          'GITHUB_TOKEN scrubbed');
+    assert.match(stdout, /DATABASE_URL=MISSING/,          'DATABASE_URL scrubbed');
+    assert.match(stdout, /NPM_TOKEN=MISSING/,             'NPM_TOKEN scrubbed');
     // System basics still flow so child can run.
-    assert.match(stdout, /HOME_OK=present/,     'HOME preserved');
+    assert.doesNotMatch(stdout, /HOME=MISSING/, 'HOME preserved');
   } finally { fake.cleanup(); }
 });
 
 test('runAgent allows known agent-auth env vars through by default (ANTHROPIC_API_KEY)', () => {
   // Counterpoint to the scrub test: legitimate agent-auth env MUST still flow.
   const fake = createFakeAgents(['codex'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
-      'done',
-      'echo "ANT=${ANTHROPIC_API_KEY:-MISSING}"',
-      'echo "OAI=${OPENAI_API_KEY:-MISSING}"',
-      'echo "CODEX=${CODEX_EXAMPLE:-MISSING}"',
-    ].join('\n'),
+    envEchoKeys: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_EXAMPLE'],
   });
   try {
     const { stdout, code } = runCompanion(
@@ -304,9 +276,9 @@ test('runAgent allows known agent-auth env vars through by default (ANTHROPIC_AP
       }
     );
     assert.equal(code, 0);
-    assert.match(stdout, /ANT=sk-ant-keep/,       'ANTHROPIC_API_KEY forwarded');
-    assert.match(stdout, /OAI=sk-openai-keep/,    'OPENAI_API_KEY forwarded');
-    assert.match(stdout, /CODEX=codex-prefix-keep/, 'CODEX_* prefix allowed');
+    assert.match(stdout, /ANTHROPIC_API_KEY=sk-ant-keep/, 'ANTHROPIC_API_KEY forwarded');
+    assert.match(stdout, /OPENAI_API_KEY=sk-openai-keep/, 'OPENAI_API_KEY forwarded');
+    assert.match(stdout, /CODEX_EXAMPLE=codex-prefix-keep/, 'CODEX_* prefix allowed');
   } finally { fake.cleanup(); }
 });
 
@@ -314,13 +286,7 @@ test('runAgent opt-in forwards full env when CHOREO_AGENT_ENV_PASSTHROUGH=1 (F6 
   // Users running Claude via Bedrock need AWS_* to reach the child. The opt-in
   // env var bypasses the allowlist so those workflows still function.
   const fake = createFakeAgents(['codex'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
-      'done',
-      'echo "AWS=${AWS_SECRET_ACCESS_KEY:-MISSING}"',
-    ].join('\n'),
+    envEchoKeys: ['AWS_SECRET_ACCESS_KEY'],
   });
   try {
     const { stdout, code } = runCompanion(
@@ -334,7 +300,7 @@ test('runAgent opt-in forwards full env when CHOREO_AGENT_ENV_PASSTHROUGH=1 (F6 
       }
     );
     assert.equal(code, 0);
-    assert.match(stdout, /AWS=explicit-opt-in/, 'opt-in forwards full env including AWS_*');
+    assert.match(stdout, /AWS_SECRET_ACCESS_KEY=explicit-opt-in/, 'opt-in forwards full env including AWS_*');
   } finally { fake.cleanup(); }
 });
 
@@ -342,15 +308,7 @@ test('agent parser preserves unknown --flag tokens in task text (F8)', () => {
   // Pre-Phase-D the parser stripped ANY token starting with `--`, corrupting
   // user tasks like "explain --force and --no-verify". Now only known flags
   // (--json, --name=, --model=, --effort=) are consumed.
-  const fake = createFakeAgents(['codex'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
-      'done',
-      'echo "ARGS:$*"',
-    ].join('\n'),
-  });
+  const fake = createFakeAgents(['codex']);
   try {
     const { stdout, code } = runCompanion(
       ['agent', '--name=codex', 'explain', '--force', 'and', '--no-verify'],
@@ -366,15 +324,7 @@ test('agent parser preserves unknown --flag tokens in task text (F8)', () => {
 test('agent parser respects `--` delimiter — everything after is task text (F8)', () => {
   // `--` is the standard POSIX end-of-options marker. After it, even tokens
   // that would normally be consumed (e.g. --json) are treated as task text.
-  const fake = createFakeAgents(['codex'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "codex-fake 0.0.0"; exit 0; fi',
-      'done',
-      'echo "ARGS:$*"',
-    ].join('\n'),
-  });
+  const fake = createFakeAgents(['codex']);
   try {
     const { stdout, code } = runCompanion(
       ['agent', '--name=codex', '--', 'print', '--json', 'format'],
@@ -387,26 +337,13 @@ test('agent parser respects `--` delimiter — everything after is task text (F8
   } finally { fake.cleanup(); }
 });
 
-test('opencode --name dispatches parses output (ANSI stripped)', () => {
-  // Fake opencode emits text with an ANSI color code. parseOpenCodeOutput
-  // strips ANSI — the sentinel "CLEAN_TEXT" must remain.
-  const fake = createFakeAgents(['opencode'], {
-    script: () => [
-      '#!/bin/sh',
-      'for arg in "$@"; do',
-      '  if [ "$arg" = "--version" ]; then echo "opencode-fake 0.0.0"; exit 0; fi',
-      'done',
-      // \x1b[31m is red ANSI; \x1b[0m resets. printf emits the real bytes.
-      'printf \'\\033[31mCLEAN_TEXT\\033[0m\\n\'',
-    ].join('\n'),
-  });
+test('opencode --name dispatches through ACP fake adapter', () => {
+  const fake = createFakeAgents(['opencode']);
   try {
     const { stdout, code } = runCompanion(['agent', '--name=opencode', 'anything'], { path: fake.path, logDir });
     assert.equal(code, 0);
-    assert.match(stdout, /CLEAN_TEXT/);
-    // No ANSI escape bytes in output
-    // eslint-disable-next-line no-control-regex
-    assert.ok(!/\[[0-9;]*[a-zA-Z]/.test(stdout), 'ANSI escapes stripped');
+    assert.match(stdout, /AGENT: OPENCODE/);
+    assert.match(stdout, /PROMPT: anything/);
   } finally {
     fake.cleanup();
   }

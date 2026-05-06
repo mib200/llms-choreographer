@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Verifier Report",
+  "description": "Structured report from a single verifier run in the Verifier Loop.",
+  "type": "object",
+  "required": ["verifier_id", "builder_run_id", "round", "status", "confidence", "verified_claims", "failed_claims", "couldnt_verify"],
+  "properties": {
+    "verifier_id": {
+      "type": "string",
+      "description": "Unique verifier identifier (e.g., 'sql-schema', 'image-quality')."
+    },
+    "builder_run_id": {
+      "type": "string",
+      "description": "UUID of the builder run this verifier is evaluating."
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Verifier loop round number."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail", "feedback", "error"],
+      "description": "Overall verdict: pass (all claims verified), fail (claims failed), feedback (improvement needed), error (verifier crashed)."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Verifier confidence in its assessment (0.0–1.0)."
+    },
+    "verified_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "method", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "claim": { "type": "string" },
+          "method": { "type": "string", "enum": ["deterministic", "llm"] },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "failed_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "method", "expected", "actual"],
+        "properties": {
+          "id": { "type": "string" },
+          "claim": { "type": "string" },
+          "method": { "type": "string", "enum": ["deterministic", "llm"] },
+          "expected": { "type": "string" },
+          "actual": { "type": "string" }
+        }
+      }
+    },
+    "couldnt_verify": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "claim", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "claim": { "type": "string" },
+          "reason": { "type": "string" },
+          "needed": { "type": "string" }
+        }
+      }
+    },
+    "feedback_given": {
+      "type": ["string", "null"],
+      "maxLength": 2048,
+      "description": "Sanitized feedback for the builder. 2K char cap."
+    },
+    "improvement_needed": {
+      "type": ["string", "null"],
+      "description": "The flywheel field — what the builder should improve next round."
+    },
+    "script_outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "script": { "type": "string" },
+          "exit_code": { "type": "integer" },
+          "stdout": { "type": "string" }
+        }
+      }
+    }
+  }
+}
